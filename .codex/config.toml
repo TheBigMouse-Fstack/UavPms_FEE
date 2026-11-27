@@ -1,0 +1,24 @@
+# .codex/config.toml — UAV-PMS Frontend
+# Giữ `# model = ...` dạng comment để Codex dùng model mặc định đang cấu hình của bạn.
+# model = "gpt-5.3-codex"
+
+sandbox_mode = "workspace-write"
+project_doc_fallback_filenames = ["AGENTS.md"]
+project_doc_max_bytes = 65536
+
+[sandbox_workspace_write]
+writable_roots = []
+network_access = false
+
+# Tắt Playwright MCP mặc định để tiết kiệm hàng chục nghìn token schema lúc code/review Diff.
+# Chỉ đổi `enabled = true` trong phiên chuyên chạy kiểm thử UI / Playwright.
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+enabled = false
+tool_timeout_sec = 45
+default_tools_approval_mode = "prompt"
+enabled_tools = ["browser_navigate", "browser_snapshot", "browser_click", "browser_console_messages"]
+
+[mcp_servers.playwright.tools.browser_snapshot]
+output_token_limit = 15000

@@ -1,3 +1,6 @@
+> [!WARNING] LEGACY / DEPRECATED — KHÔNG dùng làm nguồn đặc tả cho AI Agent.
+> Danh sách issue lịch sử trước khi hợp nhất chuẩn v2.0. Xem đặc tả SignalR hiện hành trong [`docs/MASTER_SYSTEM_SPEC.md`](docs/MASTER_SYSTEM_SPEC.md) (v2.0) và [`.specify/memory/constitution.md`](.specify/memory/constitution.md).
+
 # 🚀 GITHUB ISSUES: TÍCH HỢP SIGNALR REAL-TIME ĐA VAI TRÒ (MF01, MF02, MF03)
 
 Tài liệu này bao gồm nội dung chuẩn bị sẵn theo định dạng GitHub Issue Markdown. Bạn có thể sao chép trực tiếp nội dung từng Issue dưới đây để tạo Issue trên GitHub repository.

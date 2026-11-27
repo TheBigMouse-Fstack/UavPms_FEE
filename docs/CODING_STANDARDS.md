@@ -1,3 +1,6 @@
+> [!WARNING] LEGACY / DEPRECATED — KHÔNG dùng làm nguồn đặc tả cho AI Agent.
+> Tài liệu cũ mang tính tham khảo lịch sử (chứa quy ước React/nhánh cũ). Nguồn sự thật duy nhất hiện hành là [`docs/MASTER_SYSTEM_SPEC.md`](docs/MASTER_SYSTEM_SPEC.md) (v2.0) và [`.specify/memory/constitution.md`](.specify/memory/constitution.md).
+
 # Coding Standards & Best Practices
 
 ## File Organization Standards

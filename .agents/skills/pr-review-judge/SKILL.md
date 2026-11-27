@@ -26,6 +26,14 @@ Run this skill in a **separate, clean agent session** (never the same session th
 4. **UAV-PMS Security & Angular Compliance**:
    - Check `uav-security-gate` rules (local-only maps, RBAC, no secret/PII logging, no unsanitized HTML).
    - Check Angular 21 rules (no `any`, `OnPush`, signals, `inject()`, no cross-feature imports).
+5. **Code Readability & Defense Readiness (`readable-code-defense/SKILL.md`)**:
+   - Flag overly clever one-liners, nested ternaries, cryptic abbreviations, jargon-heavy comments, or newly copy-pasted helper functions (`record`, `stringValue`, `parseDate`, etc.).
+   - If a developer cannot easily trace and explain a function line-by-line in a live code inspection, request simplification as a blocking issue.
+6. **Pragmatic Scope Ceiling (Anti-Banking Over-Engineering)**:
+   - Context: graduation project / real operational MVP — **NOT** Tier-1 Banking SRE.
+   - **Blocking ONLY for real defects**: broken Mainflow / acceptance criteria, real P0 security/RBAC/PII/online-map/XSS flaws, compile or runtime bugs, perpetually-green tests, or WIP leaks.
+   - **NEVER Blocking** for hypothetical enterprise SRE scenarios (e.g., internal runner tampering, cosmetic micro-refactors, or speculative edge cases outside spec) — put those in **Non-blocking (max 3)** or backlog.
+   - Target **at most 1 fix round** per slice. When the Human Owner explicitly accepts a risk or defers an item to backlog, immediately respect it and do not re-block.
 
 ## Output Format
 

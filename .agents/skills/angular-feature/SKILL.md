@@ -19,6 +19,8 @@ Load this skill when adding or refactoring code under `src/app/features/<domain>
    - Never inject `HttpClient` or parse raw API envelopes in components.
    - Always render explicit **loading**, **empty**, **error**, and **403 forbidden** states.
    - Use native `@if`, `@for` (with `track`), `@switch`, `[class.*]`, `[style.*]`, and `host: {}` metadata.
+4. **Readability & Shared Utilities**:
+   - Follow `.agents/skills/readable-code-defense/SKILL.md`: prefer linear `if/return` over nested ternaries or dense chains, keep comments plain, and reuse `src/app/shared/utils/` instead of copy-pasting `record`/`stringValue`/`parseDate` helpers.
 
 ## Testing Contract (Anti "Perpetually Green" Tests)
 
