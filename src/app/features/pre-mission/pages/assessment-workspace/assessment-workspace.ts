@@ -26,7 +26,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import * as L from 'leaflet';
+import { Map as MapLibreMap, Marker } from 'maplibre-gl';
 import { Subscription } from 'rxjs';
 import { Auth } from '../../../../core/auth/auth';
 import { ToastService } from '../../../../core/toast/toast.service';
@@ -59,6 +59,19 @@ import {
 import { buildInspectionChecklist } from '../../data-access/inspection-checklist';
 import { PreMissionApi, RealtimeWeatherSnapshot, weatherSiteChecks } from '../../data-access/pre-mission-api';
 import { describeHttpError, isStaleDataError } from '../../../../shared/errors/business-error-messages';
+import {
+  buildLocalGisStyle,
+  createLocalGisMap,
+  DEFAULT_LOCAL_MAP_CENTER,
+  DEFAULT_LOCAL_MAP_ZOOM,
+  filterValidCoordinates,
+  fitLocalGisBounds,
+  LocalMapMode,
+  resolveLocalMapMode,
+  setLocalGisRouteLine,
+} from '../../../../shared/gis/local-gis';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export type WorkspaceTab = 'overview' | 'site' | 'personnel' | 'uav' | 'technical';
 
@@ -255,13 +268,14 @@ export class AssessmentWorkspace implements AfterViewInit, OnDestroy {
     return !this.isFcMatchingAssessmentDrone();
   });
 
-  // Bản đồ Leaflet
-  private map: L.Map | null = null;
-  private currentTileLayer: L.TileLayer | null = null;
-  private markersLayer = L.layerGroup();
-  private polylineLayer = L.layerGroup();
+  // Bản đồ nội bộ (MapLibre + PMTiles / schematic fallback)
+  private map: MapLibreMap | null = null;
+  private markers: Marker[] = [];
+  private routeCoords: [number, number][] = [];
+  private appliedMapMode: LocalMapMode = 'pmtiles';
   private resizeObserver: ResizeObserver | null = null;
-  protected readonly currentMapType = signal<'google-streets' | 'google-hybrid' | 'google-terrain' | 'carto'>('google-streets');
+  private mapInitTimer: ReturnType<typeof setTimeout> | null = null;
+  protected readonly currentMapType = signal<LocalMapMode>('pmtiles');
 
   protected readonly status = computed(() => (this.item()?.status ?? '').toUpperCase());
   protected readonly isReady = computed(() => this.status() === 'READY');
@@ -537,7 +551,7 @@ export class AssessmentWorkspace implements AfterViewInit, OnDestroy {
       const scopeEl = this.scopeMapContainer();
       this.regionTowers();
       if (a && tab === 'overview' && scopeEl) {
-        setTimeout(() => this.initOrUpdateMap(), 60);
+        this.scheduleMapUpdate(60);
       } else if (tab !== 'overview') {
         this.cleanupMap();
       }
@@ -546,7 +560,7 @@ export class AssessmentWorkspace implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     if (this.activeTab() === 'overview') {
-      setTimeout(() => this.initOrUpdateMap(), 150);
+      this.scheduleMapUpdate(150);
     }
   }
 
@@ -1119,53 +1133,9 @@ export class AssessmentWorkspace implements AfterViewInit, OnDestroy {
       });
   }
 
-  protected setMapType(type: 'google-streets' | 'google-hybrid' | 'google-terrain' | 'carto'): void {
-    this.currentMapType.set(type);
-    if (!this.map) return;
-    if (this.currentTileLayer) {
-      this.map.removeLayer(this.currentTileLayer);
-      this.currentTileLayer = null;
-    }
-
-    let tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    let subdomains = ['a', 'b', 'c'];
-    let maxZoom = 19;
-    let attribution = '© OpenStreetMap contributors | UAV-PMS GIS';
-    if (type === 'google-streets') {
-      tileUrl = 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
-      subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
-      maxZoom = 20;
-      attribution = '© Google Maps | UAV-PMS GIS';
-    } else if (type === 'google-hybrid') {
-      tileUrl = 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
-      subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
-      maxZoom = 20;
-      attribution = '© Google Maps | UAV-PMS GIS';
-    } else if (type === 'google-terrain') {
-      tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
-      subdomains = [];
-      maxZoom = 19;
-      attribution = '© Esri Topographic | UAV-PMS GIS';
-    }
-
-    const tileLayer = L.tileLayer(tileUrl, { maxZoom, subdomains, attribution, keepBuffer: 6 });
-    let hasFallenBack = false;
-    tileLayer.on('tileerror', () => {
-      if (!hasFallenBack && type !== 'carto') {
-        hasFallenBack = true;
-        if (this.map && this.currentTileLayer) {
-          this.map.removeLayer(this.currentTileLayer);
-        }
-        this.currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          subdomains: ['a', 'b', 'c'],
-          attribution: '© OpenStreetMap contributors | UAV-PMS GIS',
-          keepBuffer: 6,
-        }).addTo(this.map!);
-      }
-    });
-    this.currentTileLayer = tileLayer;
-    this.currentTileLayer.addTo(this.map);
+  protected setMapType(mode: LocalMapMode): void {
+    this.currentMapType.set(mode);
+    this.applyMapMode(mode);
   }
 
   private initOrUpdateMap(): void {
@@ -1178,106 +1148,194 @@ export class AssessmentWorkspace implements AfterViewInit, OnDestroy {
 
     if (this.map && this.map.getContainer() !== container) this.cleanupMap();
 
+    const validTowers = this.getValidScopeTowers();
+    const resolvedMode = resolveLocalMapMode(
+      validTowers.map((t) => ({ latitude: t.latitude!, longitude: t.longitude! })),
+      this.currentMapType(),
+    );
+    this.currentMapType.set(resolvedMode);
+
     if (!this.map) {
-      this.map = L.map(container, { center: [10.7769, 106.7009], zoom: 12, zoomControl: true });
-      this.polylineLayer = L.layerGroup().addTo(this.map);
-      this.markersLayer = L.layerGroup().addTo(this.map);
-      this.setMapType(this.currentMapType());
+      this.appliedMapMode = resolvedMode;
+      const map = createLocalGisMap(container, {
+        mode: resolvedMode,
+        center: DEFAULT_LOCAL_MAP_CENTER,
+        zoom: DEFAULT_LOCAL_MAP_ZOOM,
+        onFallbackToSchematic: () => this.handleSchematicFallback(),
+      });
+      if (!map) return;
+      this.map = map;
       if (typeof ResizeObserver !== 'undefined') {
-        this.resizeObserver = new ResizeObserver(() => this.map?.invalidateSize());
+        this.resizeObserver = new ResizeObserver(() => this.map?.resize());
         this.resizeObserver.observe(container);
       }
     }
-    this.map.invalidateSize();
+
+    this.map.resize();
     this.renderScopeOnMap();
   }
 
   private renderScopeOnMap(): void {
+    const orderedTowers = this.getValidScopeTowers();
+    const resolvedMode = resolveLocalMapMode(
+      orderedTowers.map((t) => ({ latitude: t.latitude!, longitude: t.longitude! })),
+      this.currentMapType(),
+    );
+    if (resolvedMode !== this.currentMapType()) {
+      this.currentMapType.set(resolvedMode);
+    }
+
+    const coords: [number, number][] = orderedTowers.map((t) => [t.longitude!, t.latitude!]);
+    this.routeCoords = coords;
     if (!this.map) return;
-    this.markersLayer.clearLayers();
-    this.polylineLayer.clearLayers();
 
-    const orderedTowers = this.scopeTowers().filter((t) => t.latitude != null && t.longitude != null);
-    const latLngs: [number, number][] = [];
+    this.applyMapMode(resolvedMode);
+    this.clearMarkers();
 
-    orderedTowers.forEach((t, idx) => {
-      const lat = t.latitude as number;
-      const lng = t.longitude as number;
-      latLngs.push([lat, lng]);
-
+    orderedTowers.forEach((tower, idx) => {
       const stepNumber = idx + 1;
       const isStart = idx === 0;
       const isEnd = orderedTowers.length > 1 && idx === orderedTowers.length - 1;
-      const pinClass = isStart ? 'ws-map-tower-pin is-start' : isEnd ? 'ws-map-tower-pin is-end' : 'ws-map-tower-pin';
-
-      const marker = L.marker([lat, lng], {
-        icon: L.divIcon({
-          className: 'ws-map-pin-wrapper',
-          html: `<div class="${pinClass}">${stepNumber}</div>`,
-          iconSize: [24, 24],
-          iconAnchor: [12, 12],
-        }),
-      });
-
-      const roleTag = isStart ? ' (Bắt đầu)' : isEnd ? ' (Kết thúc)' : '';
-      marker.bindTooltip(`${stepNumber}. ${t.towerCode}${roleTag}`, {
-        permanent: true,
-        direction: 'right',
-        className: 'ws-map-tower-label',
-        offset: [12, 0],
-      });
-      this.markersLayer.addLayer(marker);
+      const element = this.createScopePinElement(stepNumber, tower.towerCode, isStart, isEnd);
+      const marker = new Marker({ element, anchor: 'left' }).setLngLat(coords[idx]).addTo(this.map!);
+      this.markers.push(marker);
     });
 
-    if (latLngs.length > 1) {
-      this.polylineLayer.addLayer(L.polyline(latLngs, { color: '#1d4f91', weight: 3, dashArray: '7, 6', opacity: 0.9 }));
+    setLocalGisRouteLine(this.map, coords, { color: '#1d4f91', width: 3 });
 
+    if (coords.length > 1) {
       // Mũi tên chỉ hướng bay tại trung điểm mỗi chặng từ cột i -> cột i+1
-      for (let i = 0; i < latLngs.length - 1; i++) {
-        const [lat1, lng1] = latLngs[i];
-        const [lat2, lng2] = latLngs[i + 1];
-        const midLat = (lat1 + lat2) / 2;
-        const midLng = (lng1 + lng2) / 2;
-
-        // Góc hướng bay theo hệ tọa độ màn hình (X: Đông+, Y: Nam+)
-        const p1 = this.map.project([lat1, lng1], 16);
-        const p2 = this.map.project([lat2, lng2], 16);
+      for (let i = 0; i < coords.length - 1; i++) {
+        const [lng1, lat1] = coords[i];
+        const [lng2, lat2] = coords[i + 1];
+        const midCoord: [number, number] = [(lng1 + lng2) / 2, (lat1 + lat2) / 2];
+        const p1 = this.map.project([lng1, lat1]);
+        const p2 = this.map.project([lng2, lat2]);
         const angleDeg = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
-
-        const arrowMarker = L.marker([midLat, midLng], {
-          interactive: false,
-          icon: L.divIcon({
-            className: 'ws-map-dir-wrapper',
-            html: `<div class="ws-map-dir-arrow" style="transform: rotate(${angleDeg.toFixed(1)}deg)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3.5L13.5 8L2 12.5L4.8 8L2 3.5Z" fill="#1d4f91" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/></svg></div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9],
-          }),
-        });
-        this.polylineLayer.addLayer(arrowMarker);
+        const arrowEl = this.createDirectionArrowElement(angleDeg);
+        const arrowMarker = new Marker({ element: arrowEl }).setLngLat(midCoord).addTo(this.map);
+        this.markers.push(arrowMarker);
       }
     }
 
-    if (latLngs.length) {
-      this.map.fitBounds(L.latLngBounds(latLngs), { padding: [45, 70], maxZoom: 16 });
+    if (coords.length) {
+      fitLocalGisBounds(this.map, coords, 52, 16);
     }
   }
 
   protected refreshMap(): void {
     if (this.map) {
-      this.map.invalidateSize();
+      this.map.resize();
       this.renderScopeOnMap();
     } else {
       this.initOrUpdateMap();
     }
   }
 
+  /** Lọc bỏ an toàn cột có tọa độ hỏng để không làm lỗi hoặc mất toàn bộ bản đồ phạm vi. */
+  private getValidScopeTowers() {
+    return filterValidCoordinates(this.scopeTowers(), (t) => ({
+      latitude: t.latitude,
+      longitude: t.longitude,
+    }));
+  }
+
+  private applyMapMode(mode: LocalMapMode): void {
+    if (!this.map || this.appliedMapMode === mode) return;
+    this.appliedMapMode = mode;
+    this.map.setStyle(buildLocalGisStyle(mode));
+    // setStyle xóa nguồn GeoJSON tuyến bay nên cần gắn lại sau khi style mới nạp xong.
+    setLocalGisRouteLine(this.map, this.routeCoords, { color: '#1d4f91', width: 3 });
+  }
+
+  private handleSchematicFallback(): void {
+    this.appliedMapMode = 'schematic';
+    this.currentMapType.set('schematic');
+    if (this.map && this.routeCoords.length > 1) {
+      setLocalGisRouteLine(this.map, this.routeCoords, { color: '#1d4f91', width: 3 });
+    }
+  }
+
+  private createScopePinElement(stepNumber: number, towerCode: string, isStart: boolean, isEnd: boolean): HTMLDivElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ws-map-pin-wrapper';
+    wrapper.style.display = 'inline-flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.gap = '6px';
+
+    const pin = document.createElement('span');
+    pin.className = 'ws-map-tower-pin';
+    if (isStart) pin.classList.add('is-start');
+    else if (isEnd) pin.classList.add('is-end');
+    pin.textContent = String(stepNumber);
+
+    const label = document.createElement('span');
+    label.className = 'ws-map-tower-label';
+    let roleTag = '';
+    if (isStart) roleTag = ' (Bắt đầu)';
+    else if (isEnd) roleTag = ' (Kết thúc)';
+    label.textContent = `${stepNumber}. ${towerCode}${roleTag}`;
+
+    wrapper.appendChild(pin);
+    wrapper.appendChild(label);
+    return wrapper;
+  }
+
+  private createDirectionArrowElement(angleDeg: number): HTMLDivElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ws-map-dir-wrapper';
+    wrapper.style.pointerEvents = 'none';
+
+    const arrow = document.createElement('div');
+    arrow.className = 'ws-map-dir-arrow';
+    arrow.style.transform = `rotate(${angleDeg.toFixed(1)}deg)`;
+
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('fill', 'none');
+
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M2 3.5L13.5 8L2 12.5L4.8 8L2 3.5Z');
+    path.setAttribute('fill', '#1d4f91');
+    path.setAttribute('stroke', '#ffffff');
+    path.setAttribute('stroke-width', '1.2');
+    path.setAttribute('stroke-linejoin', 'round');
+
+    svg.appendChild(path);
+    arrow.appendChild(svg);
+    wrapper.appendChild(arrow);
+    return wrapper;
+  }
+
+  private scheduleMapUpdate(delayMs: number): void {
+    if (this.mapInitTimer !== null) clearTimeout(this.mapInitTimer);
+    this.mapInitTimer = setTimeout(() => {
+      this.mapInitTimer = null;
+      this.initOrUpdateMap();
+    }, delayMs);
+  }
+
+  private clearMarkers(): void {
+    for (const marker of this.markers) marker.remove();
+    this.markers = [];
+  }
+
   private cleanupMap(): void {
+    if (this.mapInitTimer !== null) {
+      clearTimeout(this.mapInitTimer);
+      this.mapInitTimer = null;
+    }
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    if (this.map) {
+    this.clearMarkers();
+    if (!this.map) return;
+    try {
       this.map.remove();
-      this.map = null;
-      this.currentTileLayer = null;
+    } catch {
+      // Bỏ qua nếu instance bản đồ đã bị hủy trước đó
     }
+    this.map = null;
   }
 }

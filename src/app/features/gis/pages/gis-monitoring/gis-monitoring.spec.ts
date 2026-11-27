@@ -339,7 +339,7 @@ describe('GisMonitoring tower selection', () => {
       { lat: 22.0, lng: 106.0 },
       { lat: 21.8, lng: 105.2 },
     ];
-    component.polygonVertices.set(fivePoints as unknown as L.LatLng[]);
+    component.polygonVertices.set(fivePoints);
     expect(component.polygonVertices().length).toBe(5);
 
     component.completePolygon();

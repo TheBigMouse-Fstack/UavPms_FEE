@@ -232,4 +232,58 @@ describe('AssessmentWorkspace technical inspection', () => {
     expect(parsedPlainText.isJson).toBe(false);
     expect(parsedPlainText.rawText).toBe('Đạt yêu cầu vận hành');
   });
+
+  it('switches local GIS mode and falls back to schematic safely without online tiles', () => {
+    const c = create();
+    const currentMapType = c['currentMapType'] as unknown as () => 'pmtiles' | 'schematic';
+    expect(currentMapType()).toBe('pmtiles');
+
+    c['setMapType']('schematic');
+    expect(currentMapType()).toBe('schematic');
+
+    c['setMapType']('pmtiles');
+    expect(currentMapType()).toBe('pmtiles');
+
+    c['handleSchematicFallback']();
+    expect(currentMapType()).toBe('schematic');
+  });
+
+  it('filters malformed scope tower coordinates safely and switches to schematic outside EVNSPC coverage', () => {
+    const c = create();
+    const itemSignal = c['item'] as unknown as { set: (v: PreMissionAssessment) => void };
+    const regionTowersSignal = c['regionTowers'] as unknown as {
+      set: (v: readonly { id: string; towerCode: string; latitude: number; longitude: number }[]) => void;
+    };
+    const currentMapType = c['currentMapType'] as unknown as () => 'pmtiles' | 'schematic';
+
+    itemSignal.set({
+      ...assessment(),
+      towers: [
+        { id: 'at-1', towerId: 'syn-1', towerCode: 'SYN-01', sequence: 1 },
+        { id: 'at-2', towerId: 'bad-nan', towerCode: 'BAD-NAN', sequence: 2 },
+        { id: 'at-3', towerId: 'bad-range', towerCode: 'BAD-RANGE', sequence: 3 },
+        { id: 'at-4', towerId: 'syn-north', towerCode: 'SYN-N2', sequence: 4 },
+      ],
+    });
+    regionTowersSignal.set([
+      { id: 'syn-1', towerCode: 'SYN-01', latitude: 10.5, longitude: 106.5 },
+      { id: 'bad-nan', towerCode: 'BAD-NAN', latitude: Number.NaN, longitude: 106.5 },
+      { id: 'bad-range', towerCode: 'BAD-RANGE', latitude: -95, longitude: 106.5 },
+      { id: 'syn-north', towerCode: 'SYN-N2', latitude: 21.25, longitude: 105.75 },
+    ]);
+
+    const validTowers = c['getValidScopeTowers']() as { towerId: string }[];
+    expect(validTowers.map((t) => t.towerId)).toEqual(['syn-1', 'syn-north']);
+
+    c['setMapType']('pmtiles');
+    c['renderScopeOnMap']();
+    expect(currentMapType()).toBe('schematic');
+  });
+
+  it('creates workspace scope pin elements using textContent without HTML injection', () => {
+    const c = create();
+    const el = c['createScopePinElement'](1, '<script>alert(1)</script>', true, false) as HTMLDivElement;
+    expect(el.querySelector('script')).toBeNull();
+    expect(el.textContent).toContain('1. <script>alert(1)</script> (Bắt đầu)');
+  });
 });

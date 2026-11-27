@@ -241,12 +241,29 @@
       <div class="section-head map-head">
         <h2 id="map-title">Bản đồ phạm vi</h2>
         <div class="map-header-actions">
-          <div class="map-type-group" role="group" aria-label="Kiểu bản đồ nền">
-            <button type="button" class="map-type-btn" [class.active]="currentMapType() === 'google-streets'" (click)="setMapType('google-streets')">Bản đồ</button>
-            <button type="button" class="map-type-btn" [class.active]="currentMapType() === 'google-hybrid'" (click)="setMapType('google-hybrid')">Vệ tinh</button>
-            <button type="button" class="map-type-btn" [class.active]="currentMapType() === 'carto'" (click)="setMapType('carto')">Chuẩn</button>
+          <div class="map-type-group" role="group" aria-label="Kiểu bản đồ nền nội bộ">
+            <button
+              type="button"
+              class="map-type-btn"
+              [class.active]="currentMapType() === 'pmtiles'"
+              [attr.aria-pressed]="currentMapType() === 'pmtiles'"
+              aria-label="Chuyển sang bản đồ vector nội bộ"
+              (click)="setMapType('pmtiles')"
+            >
+              Bản đồ nội bộ
+            </button>
+            <button
+              type="button"
+              class="map-type-btn"
+              [class.active]="currentMapType() === 'schematic'"
+              [attr.aria-pressed]="currentMapType() === 'schematic'"
+              aria-label="Chuyển sang sơ đồ lưới nội bộ"
+              (click)="setMapType('schematic')"
+            >
+              Sơ đồ lưới
+            </button>
           </div>
-          <button type="button" class="app-btn-secondary btn-sm" (click)="refreshMap()">Căn chỉnh</button>
+          <button type="button" class="app-btn-secondary btn-sm" aria-label="Căn chỉnh khung nhìn bản đồ" (click)="refreshMap()">Căn chỉnh</button>
         </div>
       </div>
 

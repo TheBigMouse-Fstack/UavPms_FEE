@@ -13,12 +13,23 @@ import {
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import * as L from 'leaflet';
+import { Map as MapLibreMap, Marker } from 'maplibre-gl';
 import { finalize } from 'rxjs';
 import { AssessmentTowerOption, RegionOption } from '../../../../models/pre-mission.models';
 import { MissionTargetSelection } from '../../../missions/data-access/mission-target-selection';
 import { isValidGuid, PreMissionApi } from '../../data-access/pre-mission-api';
 import { describeHttpError } from '../../../../shared/errors/business-error-messages';
+import {
+  buildLocalGisStyle,
+  createLocalGisMap,
+  DEFAULT_LOCAL_MAP_CENTER,
+  DEFAULT_LOCAL_MAP_ZOOM,
+  filterValidCoordinates,
+  fitLocalGisBounds,
+  LocalMapMode,
+  resolveLocalMapMode,
+  setLocalGisRouteLine,
+} from '../../../../shared/gis/local-gis';
 import { IdempotencyKeyTracker } from '../../../../shared/idempotency/idempotency-key';
 
 function formatDatetimeLocal(d: Date): string {
@@ -60,13 +71,14 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly mapContainer = viewChild<ElementRef<HTMLDivElement>>('createMapContainer');
-  private map: L.Map | null = null;
-  private currentTileLayer: L.TileLayer | null = null;
-  private markersLayer = L.layerGroup();
-  private polylineLayer = L.layerGroup();
+  private map: MapLibreMap | null = null;
+  private markers: Marker[] = [];
+  private routeCoords: [number, number][] = [];
+  private appliedMapMode: LocalMapMode = 'pmtiles';
   private resizeObserver: ResizeObserver | null = null;
+  private mapTimers: ReturnType<typeof setTimeout>[] = [];
 
-  protected readonly currentMapType = signal<'google-streets' | 'google-hybrid' | 'carto'>('google-streets');
+  protected readonly currentMapType = signal<LocalMapMode>('pmtiles');
   protected readonly draggedIndex = signal<number | null>(null);
 
   protected readonly busy = signal(false);
@@ -157,17 +169,7 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = null;
-    if (this.map) {
-      try {
-        this.map.remove();
-      } catch {
-        // Bỏ qua nếu instance bản đồ đã bị hủy trước đó
-      }
-      this.map = null;
-      this.currentTileLayer = null;
-    }
+    this.cleanupMap();
   }
 
   protected onRegionSelect(event: Event): void {
@@ -348,85 +350,37 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
       });
   }
 
-  protected setMapType(type: 'google-streets' | 'google-hybrid' | 'carto'): void {
-    this.currentMapType.set(type);
-    if (!this.map) return;
-    if (this.currentTileLayer) {
-      this.map.removeLayer(this.currentTileLayer);
-      this.currentTileLayer = null;
-    }
-
-    let tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    let subdomains = ['a', 'b', 'c'];
-    let maxZoom = 19;
-    let attribution = '© OpenStreetMap contributors | UAV-PMS GIS';
-
-    if (type === 'google-streets') {
-      tileUrl = 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
-      subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
-      maxZoom = 20;
-      attribution = '© Google Maps | UAV-PMS GIS';
-    } else if (type === 'google-hybrid') {
-      tileUrl = 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
-      subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
-      maxZoom = 20;
-      attribution = '© Google Maps | UAV-PMS GIS';
-    }
-
-    const tileLayer = L.tileLayer(tileUrl, { maxZoom, subdomains, attribution, keepBuffer: 6 });
-    let hasFallenBack = false;
-    tileLayer.on('tileerror', () => {
-      if (!hasFallenBack && type !== 'carto') {
-        hasFallenBack = true;
-        if (this.map && this.currentTileLayer) {
-          this.map.removeLayer(this.currentTileLayer);
-        }
-        this.currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          subdomains: ['a', 'b', 'c'],
-          attribution: '© OpenStreetMap contributors | UAV-PMS GIS',
-          keepBuffer: 6,
-        }).addTo(this.map!);
-      }
-    });
-    this.currentTileLayer = tileLayer;
-    this.currentTileLayer.addTo(this.map);
+  protected setMapType(mode: LocalMapMode): void {
+    this.currentMapType.set(mode);
+    this.applyMapMode(mode);
   }
 
   protected refreshMap(): void {
-    if (this.map) {
-      setTimeout(() => {
-        this.map?.invalidateSize();
-        this.fitMapToBounds();
-      }, 50);
-    } else {
+    if (!this.map) {
       this.initMap();
+      return;
     }
+    this.scheduleMapTask(() => {
+      this.map?.resize();
+      this.fitMapToBounds();
+    }, 50);
   }
 
   private fitMapToBounds(): void {
     if (!this.map) return;
-    const selectedIds = this.selectedTowerIds();
-    const allTowers = this.towers();
-    if (!allTowers.length) {
-      this.map.setView([10.7769, 106.7009], 12);
+    const validTowers = this.getValidTowers();
+    if (!validTowers.length) {
+      fitLocalGisBounds(this.map, [], 36, 16);
       return;
     }
 
-    const byId = new Map(allTowers.map((t) => [t.id, t]));
+    const selectedIds = this.selectedTowerIds();
+    const byId = new Map(validTowers.map((t) => [t.id, t]));
     const targetTowers = selectedIds.length
       ? selectedIds.map((id) => byId.get(id)).filter((t): t is AssessmentTowerOption => !!t)
-      : allTowers;
-
-    const points: [number, number][] = targetTowers
-      .filter((t) => Number.isFinite(t.latitude) && Number.isFinite(t.longitude) && Math.abs(t.latitude) > 0.1)
-      .map((t) => [t.latitude, t.longitude] as [number, number]);
-
-    if (points.length) {
-      this.map.fitBounds(L.latLngBounds(points), { padding: [36, 36], maxZoom: 16 });
-    } else {
-      this.map.setView([10.7769, 106.7009], 12);
-    }
+      : validTowers;
+    const coords: [number, number][] = targetTowers.map((t) => [t.longitude, t.latitude]);
+    fitLocalGisBounds(this.map, coords, 36, 16);
   }
 
   private loadTowers(regionId: string, preselect: readonly string[] = []): void {
@@ -450,8 +404,8 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
           const fromGis = this.targetSelection.selected().map((t) => t.towerId);
           const wanted = [...preselect, ...fromGis].filter((id, i, all) => available.has(id) && all.indexOf(id) === i);
           if (wanted.length) this.selectedTowerIds.set(wanted);
-          setTimeout(() => {
-            this.map?.invalidateSize();
+          this.scheduleMapTask(() => {
+            this.map?.resize();
             this.renderMap(true);
           }, 100);
         },
@@ -501,150 +455,153 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
       (document.getElementById('createScopeMapContainer') as HTMLDivElement | null);
     if (!container) return;
 
-    if (this.map) {
-      try {
-        this.map.remove();
-      } catch {
-        // Bỏ qua nếu instance bản đồ đã bị hủy trước đó
-      }
-      this.map = null;
-    }
+    this.cleanupMap();
 
-    const el = container as unknown as { _leaflet_id?: number | null };
-    if (el._leaflet_id) {
-      el._leaflet_id = null;
-    }
+    const validTowers = this.getValidTowers();
+    const initialMode = resolveLocalMapMode(
+      validTowers.map((t) => ({ latitude: t.latitude, longitude: t.longitude })),
+      this.currentMapType(),
+    );
+    this.currentMapType.set(initialMode);
+    this.appliedMapMode = initialMode;
 
-    this.map = L.map(container, {
-      center: [10.7769, 106.7009],
-      zoom: 12,
-      zoomControl: true,
+    const map = createLocalGisMap(container, {
+      mode: initialMode,
+      center: DEFAULT_LOCAL_MAP_CENTER,
+      zoom: DEFAULT_LOCAL_MAP_ZOOM,
+      onFallbackToSchematic: () => this.handleSchematicFallback(),
     });
-    this.polylineLayer = L.layerGroup().addTo(this.map);
-    this.markersLayer = L.layerGroup().addTo(this.map);
-    this.setMapType(this.currentMapType());
+    if (!map) return;
 
+    this.map = map;
     if (typeof ResizeObserver !== 'undefined') {
-      this.resizeObserver = new ResizeObserver(() => {
-        this.map?.invalidateSize();
-      });
+      this.resizeObserver = new ResizeObserver(() => this.map?.resize());
       this.resizeObserver.observe(container);
     }
 
-    setTimeout(() => {
-      this.map?.invalidateSize();
+    this.scheduleMapTask(() => {
+      this.map?.resize();
       this.renderMap(true);
     }, 100);
-
-    setTimeout(() => {
-      this.map?.invalidateSize();
-    }, 300);
+    this.scheduleMapTask(() => this.map?.resize(), 300);
   }
 
   private renderMap(fit = false): void {
-    if (!this.map) {
-      this.initMap();
-      return;
+    const validTowers = this.getValidTowers();
+    const resolvedMode = resolveLocalMapMode(
+      validTowers.map((t) => ({ latitude: t.latitude, longitude: t.longitude })),
+      this.currentMapType(),
+    );
+    if (resolvedMode !== this.currentMapType()) {
+      this.currentMapType.set(resolvedMode);
     }
-    this.markersLayer.clearLayers();
-    this.polylineLayer.clearLayers();
 
     const selectedIds = this.selectedTowerIds();
-    const selectedSet = new Set(selectedIds);
-    const allTowers = this.towers();
-
-    // Determine region anchor coordinates for towers with missing coordinates
-    let baseLat = 10.7769;
-    let baseLng = 106.7009;
-    const regionName = (this.selectedRegion()?.name || '').toLowerCase();
-    if (regionName.includes('bắc') || regionName.includes('hà nội')) {
-      baseLat = 21.0285;
-      baseLng = 105.8542;
-    } else if (regionName.includes('nam') || regionName.includes('hồ chí minh')) {
-      baseLat = 10.8231;
-      baseLng = 106.6297;
-    } else if (regionName.includes('trung') || regionName.includes('đà nẵng')) {
-      baseLat = 16.0544;
-      baseLng = 108.2022;
-    }
-
-    const firstValid = allTowers.find(
-      (t) => Number.isFinite(t.latitude) && Number.isFinite(t.longitude) && Math.abs(t.latitude) > 0.1,
+    const towerCoords = new Map<string, [number, number]>(
+      validTowers.map((t) => [t.id, [t.longitude, t.latitude]]),
     );
-    if (firstValid) {
-      baseLat = firstValid.latitude;
-      baseLng = firstValid.longitude;
-    }
-
-    // Build coordinates map
-    const towerCoords = new Map<string, [number, number]>();
-    allTowers.forEach((t, idx) => {
-      const hasCoords = Number.isFinite(t.latitude) && Number.isFinite(t.longitude) && Math.abs(t.latitude) > 0.1;
-      const lat = hasCoords ? t.latitude : baseLat + idx * 0.0035;
-      const lng = hasCoords ? t.longitude : baseLng + idx * 0.0055;
-      towerCoords.set(t.id, [lat, lng]);
-    });
-
-    // Draw route polyline in sequence
     const orderedCoords: [number, number][] = [];
     for (const id of selectedIds) {
       const coords = towerCoords.get(id);
       if (coords) orderedCoords.push(coords);
     }
+    this.routeCoords = orderedCoords;
 
-    if (orderedCoords.length > 1) {
-      const line = L.polyline(orderedCoords, {
-        color: '#0052cc',
-        weight: 3.5,
-        opacity: 0.85,
-        dashArray: '6, 6',
-      });
-      this.polylineLayer.addLayer(line);
-    }
+    if (!this.map) return;
 
-    // Draw markers
-    for (const t of allTowers) {
-      const coords = towerCoords.get(t.id);
+    this.applyMapMode(resolvedMode);
+    this.clearMarkers();
+    setLocalGisRouteLine(this.map, orderedCoords, { color: '#0052cc', width: 3.5 });
+
+    const selectedSet = new Set(selectedIds);
+    for (const tower of validTowers) {
+      const coords = towerCoords.get(tower.id);
       if (!coords) continue;
-      const isSelected = selectedSet.has(t.id);
-
-      if (isSelected) {
-        const seq = selectedIds.indexOf(t.id) + 1;
-        const marker = L.marker(coords, {
-          icon: L.divIcon({
-            className: 'tower-pin-wrapper',
-            html: `<div class="evn-tower-pin"><span class="pin-number">${seq}</span></div>`,
-            iconSize: [26, 26],
-            iconAnchor: [13, 13],
-          }),
-        });
-        marker.bindTooltip(`Thứ tự #${seq}: ${t.towerCode}${t.poleType ? ' · ' + t.poleType : ''}`, {
-          direction: 'top',
-          className: 'evn-map-tooltip',
-          offset: [0, -12],
-        });
-        marker.on('click', () => this.toggleTower(t.id));
-        this.markersLayer.addLayer(marker);
-      } else {
-        const marker = L.circleMarker(coords, {
-          radius: 6,
-          fillColor: '#94a3b8',
-          color: '#475569',
-          weight: 1.5,
-          fillOpacity: 0.85,
-        });
-        marker.bindTooltip(`${t.towerCode}${t.poleType ? ' · ' + t.poleType : ''}`, {
-          direction: 'top',
-          className: 'evn-map-tooltip',
-          offset: [0, -6],
-        });
-        marker.on('click', () => this.toggleTower(t.id));
-        this.markersLayer.addLayer(marker);
-      }
+      const seq = selectedSet.has(tower.id) ? selectedIds.indexOf(tower.id) + 1 : null;
+      const element = this.createTowerMarkerElement(tower, seq);
+      const marker = new Marker({ element }).setLngLat(coords).addTo(this.map);
+      this.markers.push(marker);
     }
 
     if (fit) {
       this.fitMapToBounds();
     }
+  }
+
+  /** Lọc bỏ an toàn bản ghi tọa độ hỏng (NaN, null, ngoài biên WGS84) để không làm mất các cột hợp lệ. */
+  private getValidTowers(): AssessmentTowerOption[] {
+    return filterValidCoordinates(this.towers(), (t) => ({
+      latitude: t.latitude,
+      longitude: t.longitude,
+    }));
+  }
+
+  private applyMapMode(mode: LocalMapMode): void {
+    if (!this.map || this.appliedMapMode === mode) return;
+    this.appliedMapMode = mode;
+    this.map.setStyle(buildLocalGisStyle(mode));
+    // setStyle xóa các layer GeoJSON cũ nên cần gắn lại tuyến bay sau khi style mới nạp xong.
+    setLocalGisRouteLine(this.map, this.routeCoords, { color: '#0052cc', width: 3.5 });
+  }
+
+  private handleSchematicFallback(): void {
+    this.appliedMapMode = 'schematic';
+    this.currentMapType.set('schematic');
+    if (this.map && this.routeCoords.length > 1) {
+      setLocalGisRouteLine(this.map, this.routeCoords, { color: '#0052cc', width: 3.5 });
+    }
+  }
+
+  private createTowerMarkerElement(tower: AssessmentTowerOption, seq: number | null): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const meta = tower.poleType ? ` · ${tower.poleType}` : '';
+    const label = seq !== null ? `Thứ tự #${seq}: ${tower.towerCode}${meta}` : `${tower.towerCode}${meta}`;
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    btn.addEventListener('click', () => this.toggleTower(tower.id));
+
+    if (seq !== null) {
+      btn.className = 'tower-pin-wrapper';
+      const pin = document.createElement('span');
+      pin.className = 'evn-tower-pin';
+      const numberSpan = document.createElement('span');
+      numberSpan.className = 'pin-number';
+      numberSpan.textContent = String(seq);
+      pin.appendChild(numberSpan);
+      btn.appendChild(pin);
+      return btn;
+    }
+
+    btn.className = 'evn-tower-dot';
+    return btn;
+  }
+
+  private clearMarkers(): void {
+    for (const marker of this.markers) marker.remove();
+    this.markers = [];
+  }
+
+  private scheduleMapTask(task: () => void, delayMs: number): void {
+    const timer = setTimeout(() => {
+      this.mapTimers = this.mapTimers.filter((id) => id !== timer);
+      task();
+    }, delayMs);
+    this.mapTimers.push(timer);
+  }
+
+  private cleanupMap(): void {
+    for (const timer of this.mapTimers) clearTimeout(timer);
+    this.mapTimers = [];
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.clearMarkers();
+    if (!this.map) return;
+    try {
+      this.map.remove();
+    } catch {
+      // Bỏ qua nếu instance bản đồ đã bị hủy trước đó
+    }
+    this.map = null;
   }
 }
