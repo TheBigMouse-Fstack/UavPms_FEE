@@ -79,7 +79,6 @@ describe('AssessmentWorkspace unit & local GIS', () => {
             assessmentEvents$: new Subject(),
             joinAssessment: vi.fn(),
             leaveAssessment: vi.fn(),
-            broadcastAssessmentEvent: vi.fn(),
           },
         },
       ],

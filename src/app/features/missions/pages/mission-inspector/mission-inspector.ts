@@ -249,7 +249,6 @@ export class MissionInspector {
     this.actionBusy.set(true);
 
     const role = assign.assignmentRole;
-    const note = `${this.currentRoleTitle()} xác nhận sẵn sàng tham gia thực hiện nhiệm vụ.`;
 
     this.api.acceptAssignment(m.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -262,23 +261,6 @@ export class MissionInspector {
           this.actionMessage.set(
             `Đã xác nhận tiếp nhận vai trò ${assignmentRoleLabel(role)} (${conf}/${total} thành viên đã xác nhận).`,
           );
-
-          // Broadcast real-time event to Manager console & Mission lists
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'CONFIRMED',
-            status: updated.status,
-            actorRole: role,
-            assignmentId: assign.id,
-            actorId: this.currentUser()?.id,
-            actorName: this.currentUser()?.fullName || this.currentUser()?.email || 'Thành viên đội bay',
-            reason: note,
-            allConfirmed: updated.allConfirmed,
-            confirmedCount: conf,
-            totalRequiredCount: total,
-            pendingRoles: updated.pendingRoles,
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => {
           this.actionBusy.set(false);
@@ -350,19 +332,6 @@ export class MissionInspector {
           this.actionBusy.set(false);
           this.showPostponeModal.set(false);
           this.actionMessage.set(`Đã gửi yêu cầu hoãn vai trò ${assignmentRoleLabel(role)} tới Quản lý vận hành.`);
-
-          // Broadcast real-time event to Manager console
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'POSTPONED',
-            status: updated.status,
-            reason,
-            actorRole: role,
-            assignmentId: assign.id,
-            actorId: this.currentUser()?.id,
-            actorName: this.currentUser()?.fullName || this.currentUser()?.email || 'Thành viên đội bay',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => {
           this.actionBusy.set(false);

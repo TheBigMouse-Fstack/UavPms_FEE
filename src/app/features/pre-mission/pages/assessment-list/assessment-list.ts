@@ -422,14 +422,6 @@ export class AssessmentList implements OnDestroy {
         const msg = `Đã đánh giá lại thành công cho mã ${item.assessmentCode}.`;
         this.successMessage.set(msg);
         this.toast.success(msg);
-        this.realtime.broadcastAssessmentEvent({
-          assessmentId: updated.id,
-          type: 'AssessmentStatusChanged',
-          status: updated.status,
-          technicalHealth: updated.technical?.status,
-          message: `Đã đánh giá lại thành công cho mã ${item.assessmentCode}: ${statusLabel(updated.status)}`,
-          timestamp: new Date().toISOString(),
-        });
         this.actionBusyId.set(null);
       },
       error: (err: unknown) => {

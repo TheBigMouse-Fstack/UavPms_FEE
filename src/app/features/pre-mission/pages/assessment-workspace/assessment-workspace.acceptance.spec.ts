@@ -120,7 +120,6 @@ function setupWorkspace(reEvaluateResult?: ReturnType<typeof of> | ReturnType<ty
           assessmentEvents$: new Subject(),
           joinAssessment: vi.fn(),
           leaveAssessment: vi.fn(),
-          broadcastAssessmentEvent: vi.fn(),
         },
       },
     ],

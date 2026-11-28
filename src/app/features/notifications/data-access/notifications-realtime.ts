@@ -102,9 +102,6 @@ export interface AssessmentRealtimeEvent {
   readonly timestamp: string;
 }
 
-const MF01_ASSESSMENT_CHANNEL = 'uavpms_mf01_assessment_bus';
-const MF02_BROADCAST_CHANNEL = 'uavpms_mf02_realtime_bus';
-
 @Injectable({
   providedIn: 'root',
 })
@@ -120,8 +117,6 @@ export class NotificationsRealtime {
 
   private connection: HubConnection | null = null;
   private starting: Promise<void> | null = null;
-  private broadcastChannel: BroadcastChannel | null = null;
-  private assessmentBroadcastChannel: BroadcastChannel | null = null;
   private readonly activeMissionGroups = new Set<string>();
   private readonly activeAssessmentGroups = new Set<string>();
   private isInAssessmentsListGroup = false;
@@ -131,35 +126,6 @@ export class NotificationsRealtime {
   readonly missionEvents$ = this.missionEventsSubject.asObservable();
   readonly assessmentEvents$ = this.assessmentEventsSubject.asObservable();
   readonly status$ = this.statusSubject.asObservable();
-
-  constructor() {
-    this.initBroadcastChannel();
-  }
-
-  private initBroadcastChannel(): void {
-    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
-    try {
-      this.broadcastChannel = new BroadcastChannel(MF02_BROADCAST_CHANNEL);
-      this.broadcastChannel.onmessage = (event: MessageEvent<MissionLifecycleRealtimeEvent>) => {
-        if (event.data && event.data.missionId && event.data.type) {
-          this.zone.run(() => this.missionEventsSubject.next(event.data));
-        }
-      };
-    } catch {
-      // Ignore broadcast channel init failure
-    }
-
-    try {
-      this.assessmentBroadcastChannel = new BroadcastChannel(MF01_ASSESSMENT_CHANNEL);
-      this.assessmentBroadcastChannel.onmessage = (event: MessageEvent<AssessmentRealtimeEvent>) => {
-        if (event.data && event.data.type) {
-          this.zone.run(() => this.assessmentEventsSubject.next(event.data));
-        }
-      };
-    } catch {
-      // Ignore broadcast channel init failure
-    }
-  }
 
   joinMission(missionId: string): void {
     if (!missionId) return;
@@ -218,43 +184,6 @@ export class NotificationsRealtime {
     }
   }
 
-  broadcastAssessmentEvent(event: AssessmentRealtimeEvent): void {
-    // 1. Emit locally on current tab
-    this.zone.run(() => this.assessmentEventsSubject.next(event));
-
-    // 2. Broadcast cross-tab (instant sync)
-    try {
-      this.assessmentBroadcastChannel?.postMessage(event);
-    } catch {
-      // Ignore postMessage failure
-    }
-
-    // 3. Emit via SignalR Hub WebSocket
-    if (this.connection && this.connection.state === HubConnectionState.Connected) {
-      this.connection.send('SendAssessmentEvent', event).catch(() => undefined);
-      this.connection.send('BroadcastAssessmentEvent', event).catch(() => undefined);
-    }
-  }
-
-    broadcastMissionEvent(event: MissionLifecycleRealtimeEvent): void {
-    // 1. Emit locally on current tab
-    this.zone.run(() => this.missionEventsSubject.next(event));
-
-    // 2. Broadcast across other tabs on same device (instant sync)
-    try {
-      this.broadcastChannel?.postMessage(event);
-    } catch {
-      // Ignore postMessage failure
-    }
-
-    // 3. Emit via SignalR Hub WebSocket to server and other network clients
-    if (this.connection && this.connection.state === HubConnectionState.Connected) {
-      this.connection.send('SendMissionEvent', event).catch(() => undefined);
-      this.connection.send('BroadcastMissionLifecycle', event).catch(() => undefined);
-      this.connection.send('BroadcastEvent', event).catch(() => undefined);
-    }
-  }
-
   connect(): void {
     if (this.connection?.state === HubConnectionState.Connected || this.starting) return;
     const initialHubUrl = this.backendFallback.getActiveHubUrl();
@@ -304,14 +233,6 @@ export class NotificationsRealtime {
     this.connection = null;
     this.starting = null;
     void connection?.stop();
-    if (this.broadcastChannel) {
-      this.broadcastChannel.close();
-      this.broadcastChannel = null;
-    }
-    if (this.assessmentBroadcastChannel) {
-      this.assessmentBroadcastChannel.close();
-      this.assessmentBroadcastChannel = null;
-    }
   }
 
   private buildConnection(hubUrl: string = this.backendFallback.getActiveHubUrl()): HubConnection {

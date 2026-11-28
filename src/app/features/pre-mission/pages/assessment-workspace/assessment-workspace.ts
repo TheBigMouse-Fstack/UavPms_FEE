@@ -663,13 +663,6 @@ export class AssessmentWorkspace implements AfterViewInit, OnDestroy {
         this.applyAssessment(updated);
         this.busy.set(false);
         this.actionMessage.set('Đã hoàn tất đánh giá lại tính khả thi và nguồn lực.');
-        this.realtime.broadcastAssessmentEvent({
-          assessmentId: updated.id,
-          type: 'AssessmentStatusChanged',
-          status: updated.status,
-          message: `Hồ sơ đã được đánh giá lại: ${updated.status}`,
-          timestamp: new Date().toISOString(),
-        });
       },
       error: (err: unknown) => {
         this.busy.set(false);

@@ -1353,19 +1353,6 @@ export class MissionDetail {
         next: (updated) => {
           this.mission.set(updated);
           this.actionMessage.set(`${userName} (${assignmentRoleLabel(assignment.assignmentRole)}) đã xác nhận tiếp nhận.`);
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'CONFIRMED',
-            status: updated.status,
-            assignmentId: assignment.id,
-            actorRole: assignment.assignmentRole,
-            actorName: userName,
-            allConfirmed: updated.allConfirmed,
-            confirmedCount: updated.confirmedCount,
-            totalRequiredCount: updated.totalRequiredCount,
-            reason: `${assignment.assignmentRole} xác nhận tiếp nhận nhiệm vụ.`,
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1394,7 +1381,6 @@ export class MissionDetail {
 
     const assignment = this.selectedAssignmentToPostpone();
     const role = assignment?.assignmentRole || 'INSPECTOR';
-    const userName = assignment ? this.getMemberDisplayName(assignment) : 'Thành viên đội ngũ';
 
     this.api
       .postponeAssignment(currentMission.id, reason)
@@ -1407,16 +1393,6 @@ export class MissionDetail {
           this.mission.set(updated);
           this.showPostponeModal.set(false);
           this.actionMessage.set(`Đã gửi yêu cầu hoãn vai trò ${assignmentRoleLabel(role)} tới Quản lý.`);
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'POSTPONED',
-            status: updated.status,
-            assignmentId: assignment?.id,
-            reason,
-            actorRole: role,
-            actorName: userName,
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1438,16 +1414,6 @@ export class MissionDetail {
         next: () => {
           this.mission.update((curr) => (curr ? { ...curr, status: 'Ready' } : null));
           this.actionMessage.set('Đã hoàn tất check-in tại điểm bay. Trạng thái: Sẵn sàng bay.');
-          this.realtime.broadcastMissionEvent({
-            missionId: currentMission.id,
-            type: 'CHECKED_IN',
-            status: 'Ready',
-            actorRole: this.senderRole(),
-            actorId: this.auth.user()?.id,
-            actorName: this.senderName(),
-            reason: 'Thanh tra viên đã check-in hiện trường điểm bay.',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => {
           this.actionMessage.set(this.errorMessage(err, 'Không thể check-in tại điểm bay.'));
@@ -1478,16 +1444,6 @@ export class MissionDetail {
           this.mission.update((curr) => (curr ? { ...curr, status: 'InProgress', actualStart: now } : null));
           this.loadActivities(currentMission.id);
           this.actionMessage.set('Đã bắt đầu chuyến bay khảo sát. Trạng thái: Đang bay.');
-          this.realtime.broadcastMissionEvent({
-            missionId: currentMission.id,
-            type: 'STARTED',
-            status: 'InProgress',
-            actorRole: this.senderRole(),
-            actorId: this.auth.user()?.id,
-            actorName: this.senderName(),
-            reason: 'Bắt đầu hành trình bay khảo sát hiện trường.',
-            timestamp: now,
-          });
         },
         error: (err: unknown) => {
           // REQUIRED_ACCEPTANCE_PENDING, MISSION_START_TOO_EARLY, DRONE_IN_USE, ... (Vietnamese).
@@ -1515,16 +1471,6 @@ export class MissionDetail {
           this.mission.update((curr) => (curr ? { ...curr, status: 'Completed', actualCompleted: now } : null));
           this.loadActivities(currentMission.id);
           this.actionMessage.set('Chuyến bay khảo sát đã hoàn tất. Có thể tải ảnh/video lên để phân tích.');
-          this.realtime.broadcastMissionEvent({
-            missionId: currentMission.id,
-            type: 'COMPLETED',
-            status: 'Completed',
-            actorRole: this.senderRole(),
-            actorId: this.auth.user()?.id,
-            actorName: this.senderName(),
-            reason: 'Hoàn tất bay khảo sát hiện trường.',
-            timestamp: now,
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1567,22 +1513,6 @@ export class MissionDetail {
           this.actionMessage.set(`Đã tái phân công vai trò ${assignmentRoleLabel(assignment.assignmentRole)} cho ${newName}.`);
           // The backend revokes the old assignment and creates a new one (new id): reload the member list.
           this.loadAssignmentsOverview(currentMission.id);
-
-
-          this.realtime.broadcastMissionEvent({
-            missionId: currentMission.id,
-            type: 'REASSIGNED',
-            status: updated.status,
-            actorRole: 'MANAGER',
-            actorName: this.auth.user()?.fullName || 'Quản lý vận hành',
-            assignmentId: assignment.id,
-            reason: reason || 'Thay thế nhân sự xin hoãn',
-            allConfirmed: updated.allConfirmed,
-            confirmedCount: updated.confirmedCount,
-            totalRequiredCount: updated.totalRequiredCount,
-            pendingRoles: updated.pendingRoles,
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => {
           const notFound = err instanceof HttpErrorResponse && err.status === 404;
@@ -1625,15 +1555,6 @@ export class MissionDetail {
           this.mission.set(updated);
           this.showSuspendModal.set(false);
           this.actionMessage.set('Đã ra lệnh tạm đình chỉ nhiệm vụ bay.');
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'SUSPENDED',
-            status: 'Suspended',
-            reason,
-            actorRole: 'MANAGER',
-            actorName: updated.managerUsername || 'Quản lý vận hành',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1659,14 +1580,6 @@ export class MissionDetail {
               ? 'Đã khôi phục nhiệm vụ. Còn thành viên bắt buộc chưa chấp nhận nên nhiệm vụ quay về trạng thái Chờ tiếp nhận.'
               : 'Đã khôi phục nhiệm vụ bay.',
           );
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'RESUMED',
-            status: updated.status,
-            actorRole: 'MANAGER',
-            actorName: updated.managerUsername || 'Quản lý vận hành',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1698,15 +1611,6 @@ export class MissionDetail {
           this.mission.set(updated);
           this.showCancelModal.set(false);
           this.actionMessage.set('Đã hủy bỏ nhiệm vụ bay.');
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'CANCELLED',
-            status: 'Cancelled',
-            reason,
-            actorRole: 'MANAGER',
-            actorName: updated.managerUsername || 'Quản lý vận hành',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1729,14 +1633,6 @@ export class MissionDetail {
         next: (updated) => {
           this.mission.set(updated);
           this.actionMessage.set('Đã xác nhận bản nháp và gửi yêu cầu tiếp nhận tới đội ngũ.');
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'DISPATCHED',
-            status: updated.status,
-            actorRole: 'MANAGER',
-            actorName: updated.managerUsername || 'Quản lý vận hành',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err, 'Không thể xác nhận và gửi tiếp nhận nhiệm vụ.')),
       });
@@ -1757,14 +1653,6 @@ export class MissionDetail {
         next: (updated) => {
           this.mission.set(updated);
           this.actionMessage.set('Đã gửi thông báo nhắc nhở tới Inspector!');
-          this.realtime.broadcastMissionEvent({
-            missionId: updated.id,
-            type: 'REMINDER',
-            reason: 'Yêu cầu tiếp nhận nhiệm vụ khẩn cấp',
-            actorRole: 'MANAGER',
-            actorName: updated.managerUsername || 'Quản lý vận hành',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1816,15 +1704,6 @@ export class MissionDetail {
             );
           }
           this.chatMessage.set('');
-          this.realtime.broadcastMissionEvent({
-            missionId: currentMission.id,
-            type: 'COMMUNICATION',
-            actorRole: role,
-            actorId: this.auth.user()?.id,
-            actorName: senderName,
-            message: content,
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -1936,15 +1815,6 @@ export class MissionDetail {
           this.mission.set(merged);
           this.closePriorityModal();
           this.actionMessage.set(`Đã cập nhật mức độ ưu tiên nhiệm vụ thành: ${this.priorityLabel(p)}.`);
-          this.realtime.broadcastMissionEvent({
-            missionId: updatedMission.id,
-            type: 'PRIORITY_UPDATED',
-            status: updatedMission.status,
-            priority: p,
-            actorRole: 'MANAGER',
-            actorName: this.auth.user()?.fullName || 'Quản lý vận hành',
-            timestamp: new Date().toISOString(),
-          });
         },
         error: (err: unknown) => this.actionMessage.set(this.errorMessage(err)),
       });
@@ -2576,17 +2446,6 @@ export class MissionDetail {
       this.resultMessage.set('Đã từ chối phát hiện AI (nhận diện sai - Dương tính giả).');
     }
     this.loadMaintenanceTasks(missionId);
-
-    this.realtime.broadcastMissionEvent({
-      missionId,
-      type: 'DETECTION_REVIEWED',
-      status: backendStatus,
-      actorRole: this.senderRole(),
-      actorName: this.senderName(),
-      detectionId: selected.id,
-      reason: this.reviewNotes() || (backendStatus === 'Approved' ? 'Xác nhận khuyết tật' : 'Bác bỏ khuyết tật'),
-      timestamp: new Date().toISOString(),
-    });
   }
 
   protected createMaintenanceTaskFromDetection(detection: MissionDetectionView, triggerReviewApi = true): void {
