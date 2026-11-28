@@ -124,7 +124,7 @@
           } @else {
             @for (drone of paginatedDrones(); track drone.id) {
               <tr>
-                <td>
+                <td class="management-code-cell">
                   <a
                     class="cell-primary cell-truncate"
                     [routerLink]="['/drones', drone.id]"

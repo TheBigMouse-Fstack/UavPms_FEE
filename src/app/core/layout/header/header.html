@@ -1,10 +1,17 @@
 <header class="app-header ant-layout-header">
   <button type="button" class="app-mobile-menu" aria-label="Mở điều hướng" (click)="menuOpened.emit()"><span nz-icon nzType="menu"></span></button>
-  <a class="app-header-brand" routerLink="/dashboard" aria-label="Hệ thống Quản lý Kỹ thuật & Thiết bị bay UAV-PMS">
-    <img src="/images/uav-pms-logo.svg" alt="UAV-PMS Logo" class="app-header-evn-logo" />
+  <a class="app-header-brand" routerLink="/dashboard" aria-label="Trang chủ Giám sát Lưới điện UAV">
+    <img
+      ngSrc="/images/uav-pms-header-logo.jpg"
+      width="40"
+      height="40"
+      priority
+      alt="Biểu trưng UAV-PMS"
+      class="app-header-evn-logo"
+    />
     <div class="app-header-brand-copy">
-      <span class="brand-top-text">HỆ THỐNG GIÁM SÁT LƯỚI ĐIỆN UAV</span>
-      <span class="brand-bottom-text">HỆ THỐNG QUẢN LÝ KỸ THUẬT</span>
+      <span class="brand-top-text">Giám sát Lưới điện UAV</span>
+      <span class="brand-bottom-text">Quản lý kỹ thuật vận hành</span>
     </div>
   </a>
   <div class="app-header-spacer"></div>

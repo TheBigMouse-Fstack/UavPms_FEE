@@ -90,6 +90,10 @@
   }
 }
 
+.management-code-cell {
+  font-variant-numeric: tabular-nums;
+}
+
 .model-cell {
   display: flex;
   flex-direction: column;

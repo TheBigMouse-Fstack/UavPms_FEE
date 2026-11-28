@@ -1,3 +1,4 @@
+import { NgOptimizedImage } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, output, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -15,7 +16,7 @@ import { NotificationLink, notificationLink, referenceTypeLabel } from './notifi
     '(document:click)': 'handleDocumentClick($event)',
     '(document:keydown.escape)': 'onEscape()',
   },
-  imports: [NzIconModule, RouterLink],
+  imports: [NgOptimizedImage, NzIconModule, RouterLink],
   templateUrl: './header.html',
   styleUrl: './header.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

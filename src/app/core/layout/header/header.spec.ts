@@ -68,6 +68,33 @@ describe('Header', () => {
     expect(el.querySelector('.app-facility-wrap')).toBeNull();
   });
 
+  it('renders the brand with an optimized descriptive logo and readable Vietnamese copy', () => {
+    const { el } = setup('Inspector');
+    const brand = el.querySelector<HTMLAnchorElement>('.app-header-brand');
+    const logo = brand?.querySelector<HTMLImageElement>('img');
+
+    expect(brand?.getAttribute('aria-label')).toBe('Trang chủ Giám sát Lưới điện UAV');
+    expect(logo?.getAttribute('src')).toContain('/images/uav-pms-header-logo.jpg');
+    expect(logo?.getAttribute('alt')).toBe('Biểu trưng UAV-PMS');
+    expect(logo?.width).toBe(40);
+    expect(logo?.height).toBe(40);
+    expect(el.querySelector('.brand-top-text')?.textContent?.trim()).toBe('Giám sát Lưới điện UAV');
+    expect(el.querySelector('.brand-bottom-text')?.textContent?.trim()).toBe('Quản lý kỹ thuật vận hành');
+  });
+
+  it('exposes accessible labels and menu state for both header action buttons', () => {
+    const { el } = setup('Inspector');
+    const notificationButton = el.querySelector<HTMLButtonElement>('.app-notification-button');
+    const userButton = el.querySelector<HTMLButtonElement>('.app-header-user-btn');
+
+    expect(notificationButton?.type).toBe('button');
+    expect(notificationButton?.getAttribute('aria-label')).toBe('Thông báo');
+    expect(notificationButton?.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    expect(userButton?.type).toBe('button');
+    expect(userButton?.getAttribute('aria-label')).toBe('Tài khoản người dùng');
+    expect(userButton?.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('hides the removed region picker and shows manager role and audit logs in profile menu', () => {
     const { fixture, el } = setup('Manager');
     expect(el.querySelector('.app-facility-wrap')).toBeNull();

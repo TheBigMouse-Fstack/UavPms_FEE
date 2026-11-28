@@ -148,7 +148,7 @@
             @for (mission of response().items; track mission.id) {
               @let link = rowLink(mission);
               <tr>
-                <td>
+                <td class="management-code-cell">
                   <span class="cell-primary cell-truncate" [title]="mission.missionCode">
                     {{ mission.missionCode }}
                   </span>
