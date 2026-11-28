@@ -167,16 +167,16 @@ flowchart LR
 2. **Kiểm tra BIST, Sức khỏe Drone & Thông số FC (Tại màn Chi tiết Drone)**:
    - **Vị trí UI**: Nằm trực tiếp trong màn hình **Chi tiết Drone (`Drone Detail`)** — **chỉ `Technician` và `SystemAdmin` được quyền thao tác**.
    - **Thao tác hỗ trợ**:
-     - Kết nối trực tiếp qua cổng Serial/FC lấy thông số Flight Controller (Firmware, Sensor, Pin, GPS lock, Motor/ESC) và chạy BIST tự động.
-     - **Cho phép `Technician` và `SystemAdmin` nhập thủ công thông số BIST / kiểm tra sức khỏe Drone** kèm ghi chú kiểm định và lưu vào `DroneTechnicalInspections` / `DroneTechnicalMetrics`.
+     - Kết nối trực tiếp qua cổng Serial/FC lấy thông số Flight Controller (Firmware, Sensor, Pin, GPS lock, Motor/ESC) và chạy BIST tự động. **`[BRL-02 — Khóa FC & Không bịa Firmware]`**: *Cấm tự động gỡ FC đang gắn trên Drone khác (kể cả cùng vùng, kể cả `SystemAdmin`) — trả `409 FC_ALREADY_PAIRED`, bắt buộc ngắt kết nối (`DELETE`) ở Drone cũ trước; không tự điền `"Betaflight"` nếu thiếu firmware.*
+     - **Cho phép `Technician` và `SystemAdmin` nhập thủ công thông số BIST / kiểm tra sức khỏe Drone** kèm ghi chú kiểm định và lưu vào `DroneTechnicalInspections` / `DroneTechnicalMetrics`. **`[BRL-04 — Báo đỏ thiếu thông số & Bổ sung thủ công]`**: *Khi đọc FC hoặc kiểm tra chỉ gửi một phần số đo hoặc báo mất kết nối (`connected: boolean`), lưu đúng số đo thực tế đã gửi và tuyệt đối không bịa `0%`; nếu thiếu thông số bắt buộc thì báo đỏ chỉ mục còn thiếu (`MaintenanceRequired`) và vẫn mở biểu mẫu cho phép `Technician`/`SystemAdmin` nhập thêm thủ công bổ sung.*
    - **Kết quả**: Cập nhật trạng thái kỹ thuật của Drone sang **`Đạt chuẩn / Sẵn sàng`** hoặc **`Không đạt / Cần bảo trì`**.
 3. **Đánh giá Tiền nhiệm vụ (Pre-Mission Assessment — MF01)**:
    - **Loại bỏ hoàn toàn màn hình & bước kiểm tra kỹ thuật Drone khỏi Pre-Mission** (không bắt `Manager` kiểm tra BIST/FC trong MF01).
    - **Các bước của `Manager` (hoặc `SystemAdmin`) trong MF01**:
      1. Chọn Khu vực (`Region`) và Danh sách Cột điện cần bay (`PreMissionAssessmentTowers`).
-     2. Chọn các **Drone đang ở trạng thái `Đạt chuẩn / Sẵn sàng`** (kế thừa kết quả kiểm tra từ màn Chi tiết Drone).
+     2. Chọn các **Drone đang ở trạng thái `Đạt chuẩn / Sẵn sàng`** (kế thừa kết quả kiểm tra từ màn Chi tiết Drone). **`[BRL-01 — Ràng buộc vùng tài sản]`**: *Drone thuộc vùng nào chỉ được sử dụng cho hồ sơ Pre-Mission / Mission của đúng vùng đó (`Uav.AssignedRegionId == RegionId`) — áp dụng bắt buộc cho TẤT CẢ các role kể cả `SystemAdmin` (vi phạm trả `409 DRONE_REGION_MISMATCH`).* **`[BRL-03 — Tự động lọc Drone khi Re-evaluate]`**: *Khi gọi `/re-evaluate` không truyền `droneIds[]` mới, tự động loại bỏ các Drone đã chuyển vùng hoặc không còn `Ready` ra khỏi hồ sơ rồi tính lại kết quả sẵn sàng (còn khi truyền `droneIds[]` mới vẫn chặn `409` nếu lệch vùng/chưa Ready).*
      3. Kiểm tra điều kiện Thời tiết / Không vực an toàn.
-     4. **Chỉ chọn SỐ LƯỢNG nhân sự cần thiết theo từng role** (`InspectorCount`, `AnalystCount`, `TechnicianCount` lưu tại `PreMissionAssessmentPersonnel`) — **chưa chọn đích danh tên người** ở MF01.
+     4. **Chỉ chọn SỐ LƯỢNG nhân sự cần thiết theo từng role** (`inspectorCount`, `analystCount`, `technicianCount` lưu tại `PreMissionAssessments.Findings` `jsonb` — không tạo migration thừa) — **chưa chọn đích danh tên người** ở MF01.
    - **Ràng buộc cứng**: Phải có bản `PreMissionAssessment` đạt chuẩn và còn hiệu lực (tối đa **≤ 7 ngày**) thì mới được tạo và bắt đầu Mission.
 
 ---
@@ -363,7 +363,7 @@ stateDiagram-v2
 | **Đợt 1** | **Dọn DB, Silent Refresh, List Ordering & OpenAPI v1.0** | Migration **DROP 4 bảng** (+ xử lý `DroneTelemetry`), `InspectionMedia.MissionId` & `TowerId` nullable. Chuẩn hóa 1 `ApiResponse` + `camelCase` + mặc định **OrderByDescending mới nhất** toàn bộ API. **Xuất `openapi.json` v1.0**. | **Silent Refresh Token** (không bị văng khi đang dùng). Sync `docs/contracts/openapi.json` v1.0. Chuyển nốt 2 màn Pre-Mission sang **Local-only GIS** (`FE-REQ-004` PR-1b2). |
 | **Đợt 2** | **Drone BIST/FC, Pre-Mission 3 Role, Check-in GPS 50m & Telemetry MF03** | Chuyển BIST/FC sang Drone Detail (`Technician`/`Admin`), bỏ BIST khỏi Pre-Mission, MF01 chọn số lượng → MF02 chọn đích danh 3 role → cả 3 `Accept` → `Inspector` Check-in GPS `≤ 50m` tại Cột 1 + bắn SignalR. `/hubs/telemetry` RAM-only (delay `≤ 10s`, không lưu DB). `SystemAdmin` full quyền + `SystemSettings`. | Nối UI Chi tiết Drone (BIST/FC/nhập tay cho `Technician`/`Admin`), bỏ kiểm tra Drone ở Pre-Mission, MF02 chọn 3 role + 3 nút `Accept`, Check-in GPS `50m` tại Cột 1, nối `/hubs/telemetry` trên Local GIS, UI `SystemSettings` cho `SystemAdmin`. |
 | **Đợt 3** | **EXIF GPS/Video Frame, Xóa "AI Review" & `N/A`, Auto Maintenance, Notification Matrix** | Trích EXIF GPS ảnh & frame lỗi video gắn cột gần nhất (`TowerId` nullable), cho phép đổi cột. Mở quyền **Xem** defect cho mọi thành viên Mission (chỉ `Analyst` Mission / `SystemAdmin` **Duyệt**). Tự gán `MaintenanceTicket` cho `Technician` của Mission. Chia đúng Notification Matrix + Hangfire cron + chống duplicate SignalR. | Upload ảnh không cần chọn cột + đổi cột thủ công, **bỏ chữ `"AI Review"` sau duyệt**, **xóa sạch `N/A`**, đồng nhất UI các role, bỏ `preferredModel` & khóa `20MB`/`200MB`, khử duplicate popup Notification, mặc định mọi list mới nhất lên đầu. |
-| **Đợt 4** | **Kiểm thử tích hợp thật Zero Mock & Bảo vệ đồ án** | Test tích hợp thật (SMTP OTP, RabbitMQ AI + EXIF/Video, GPS 50m Check-in, Telemetry ≤ 10s RAM-only, Hangfire cron, Notification Matrix). | Playwright E2E đủ 5 luồng + Multi-role + Silent Refresh + Test rút mạng bản đồ PMTiles + dọn code theo `readable-code-defense`. |
+| **Đợt 4** | **Kiểm thử tích hợp thật Zero Mock & Bảo vệ đồ án** | Test tích hợp thật (SMTP OTP, RabbitMQ AI + EXIF/Video, GPS 50m Check-in, Telemetry ≤ 10s RAM-only, Hangfire cron, Notification Matrix). | Test rút mạng bản đồ PMTiles + dọn code theo `readable-code-defense` + *(bổ sung nội bộ FE, không thuộc điều kiện bắt buộc Review 2 BM04/CI)*: Playwright E2E đủ luồng + Multi-role + Silent Refresh. |
 
 ---
 
@@ -404,3 +404,24 @@ stateDiagram-v2
 ### 8.3. SignalR Hubs & Event Contract (`camelCase`, `[Authorize]`)
 - **`/hubs/notifications`** (`NotificationService` — Ocelot tách HTTP `/negotiate` + WS): mỗi sự kiện nghiệp vụ phát **1 event duy nhất**, `NotificationConnectionRegistry` lọc `Distinct` `connectionId` và dọn group ở `OnDisconnectedAsync`; FE deduplicate theo `notificationId` / `eventId` (dự phòng `type + referenceId + actorId`) trước khi hiện Popup/Toast.
 - **`/hubs/telemetry`** (`OperationsService` — RAM-only, không ghi DB `DroneTelemetry`, độ trễ ≤ `10s`): `TelemetryUpdated`, `DroneOnline`, `DroneOffline` *(khi mất tín hiệu > 30s)*.
+
+### 8.4. Chuẩn AI 6 Classes, Bộ NFR & Ánh xạ 4 Workflows Review 2 (BM04) ↔ 5 Luồng Kỹ thuật
+
+1. **6 Lớp Nhận diện AI Chính thức (1 Normal + 5 Defect Classes — tập kiểm thử `Finding Nemo V5`)**:
+   - **1 lớp bình thường (không tạo khuyết tật / phiếu bảo trì)**: `insulator` *(Sứ cách điện bình thường)*.
+   - **5 lớp khuyết tật (`DefectCategories`)**: `insulator_broken` *(Sứ vỡ / rạn nứt)*, `insulator_flashover` *(Sứ phóng điện)*, `bird_nest` *(Tổ chim)*, `foreign_object` *(Dị vật vướng dây)*, `broken_strand` *(Đứt sợi dây dẫn)*.
+   - Các lớp ngoài 6 lớp trên nằm ngoài phạm vi nhận diện tự động (*Out of Scope*). *(Lưu ý khi hoàn thiện FE Đợt 3–4: chuẩn hóa `src/app/models/system-settings.models.ts` để 5 lớp lỗi không ánh xạ chung về `BROKEN_INSULATOR` và gỡ nhánh category cũ trong `mission-detail.ts`.)*
+2. **Ngưỡng NFR Chính thức (Review 2 BM04)**:
+   - **`NFR-AI-04`**: `mAP@50 >= 0.75`, `Precision >= 0.80` trên tập **`Finding Nemo V5`** (tách riêng khỏi operational acceptance).
+   - **`NFR-PER-02`**: GPU worker inference cho ảnh chuẩn 4K **`<= 3.0 giây`** (không tính queue wait và transfer).
+   - **`NFR-USA-01`**: Từ Dashboard (`SCR-02`) tới mọi màn hình nghiệp vụ chính **`<= 3 clicks`**.
+   - **`NFR-R01`**: Benchmark có config và execution logs kiểm chứng được.
+   - **`BR-054 / BR-055`**: Telemetry RAM-only delay **`<= 10 giây`**, cảnh báo offline **`> 30 giây`** mất gói tin.
+   - **`NFR-PER-01`**: Standard REST CRUD **`p95 < 500 ms`**.
+   - **`NFR-SEC-01`**: Truy cập trái phép chéo vùng / sai role **`0%`** (chặn 100% với HTTP `401`/`403`).
+3. **Ánh xạ 4 Workflows Hội đồng (BM04) ↔ 5 Luồng Kỹ thuật (`MASTER_SYSTEM_SPEC`)**:
+   - **Luồng 1 (Auth, JWT, SMTP OTP, Silent Refresh & `SystemSettings`)**: Bắt buộc hoàn thiện 100% trong hệ thống (`CF` / `NFR-SEC-01`), không tách thành workflow thứ 5 trên BM04.
+   - **Luồng 2 (Drone Detail BIST/FC + MF01)** ↔ **`WF-01`** (*Nguyễn Nhật An*: `MF01.2`, `MF01.4`).
+   - **Luồng 3 (MF02 + MF03)** ↔ **`WF-02`** (*Nguyễn Quốc Khánh*: `MF02.1`, `MF02.5`) + **`WF-03`** (*Trần Ánh Quốc*: `MF03.1`, `MF03.2` — chỉ gồm Check-in GPS 50m, bay, Telemetry RAM & tự trả UAV).
+   - **Luồng 4 (Upload EXIF/Video + AI Review) + Luồng 5 (Auto Maintenance + Notifications + Reports)** ↔ **`WF-04`** (*Phạm Hoàng Minh Châu*: `MF04.1` gồm `SR-01` & `MF03-TC-009..012`, `MF04.2`, `MF04.3`, `MF04.4`) + **`CF`** (Notification Matrix, Hangfire 6 cron jobs, List Ordering `DESC`).
+   - **Kiểm thử Browser E2E (Playwright)**: Giữ như phần kiểm thử bổ sung nội bộ của FE ở Đợt 4, **không** đưa thành cam kết bắt buộc của Review 2 BM04 / CI pipeline.

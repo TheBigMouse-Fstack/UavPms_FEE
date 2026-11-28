@@ -18,3 +18,13 @@ export {
   formatVietnameseDateInput,
   parseDateInputToIso,
 } from './date-format.util';
+
+export {
+  type MultiRolePrincipal,
+  type StandardRoleFamily,
+  canManagePreMission,
+  canPerformDroneBist,
+  canViewDroneTechnicalHistory,
+  extractRoleFamilies,
+  hasAnyRoleFamily,
+} from './role-access.util';

@@ -15,11 +15,11 @@
           <span [class]="statusColorClass(a.status)">{{ statusLabel(a.status) }}</span>
           @if (a.validUntil) {
             <span class="ws-sep" aria-hidden="true">·</span>
-            <span class="ws-valid-until tabular-nums">Hiệu lực đến {{ a.validUntil | date:'dd/MM/yyyy HH:mm' }}</span>
+            <span class="ws-valid-until tabular-nums">Hiệu lực đến {{ formatDateTime(a.validUntil) }}</span>
           }
         </div>
         <p>
-          {{ a.regionName }} · {{ a.towers.length }} vị trí cột · Khung giờ {{ a.plannedStart | date:'dd/MM/yyyy HH:mm' }} – {{ a.plannedEnd | date:'dd/MM/yyyy HH:mm' }}
+          {{ a.regionName }} · {{ a.towers.length }} vị trí cột · Khung giờ {{ formatDateTime(a.plannedStart) }} – {{ formatDateTime(a.plannedEnd) }}
         </p>
       </div>
       <div class="head-actions">
@@ -29,6 +29,39 @@
         <a class="app-btn-secondary" routerLink="/pre-mission">Danh sách</a>
       </div>
     </header>
+
+    @if (error()) {
+      <div class="app-error-banner" role="alert">
+        <span>{{ error() }}</span>
+        <button type="button" class="app-btn-action" (click)="error.set('')">Đóng</button>
+      </div>
+    }
+
+    @if (canManage()) {
+      <form
+        class="ws-headcount-form"
+        data-testid="workspace-headcount-form"
+        [formGroup]="headcountForm"
+        (ngSubmit)="reevaluate()"
+        aria-label="Cập nhật định mức nhân sự MF01"
+      >
+        <div class="ws-headcount-field">
+          <label for="workspaceInspectorCount">Số Phi công</label>
+          <input id="workspaceInspectorCount" type="number" min="1" step="1" formControlName="inspectorCount" />
+        </div>
+        <div class="ws-headcount-field">
+          <label for="workspaceAnalystCount">Số Chuyên viên phân tích</label>
+          <input id="workspaceAnalystCount" type="number" min="1" step="1" formControlName="analystCount" />
+        </div>
+        <div class="ws-headcount-field">
+          <label for="workspaceTechnicianCount">Số Kỹ thuật viên</label>
+          <input id="workspaceTechnicianCount" type="number" min="1" step="1" formControlName="technicianCount" />
+        </div>
+        @if (headcountForm.touched && headcountForm.invalid) {
+          <p class="error-msg" role="alert">Mỗi vai trò phải có số lượng nguyên từ 1 trở lên.</p>
+        }
+      </form>
+    }
 
     <!-- Unmet readiness conditions (only when not ready and not cancelled/completed) -->
     @if (!isEvaluating() && !isExpired() && !isCancelled() && !isCompleted() && failedConditions().length > 0 && !isReady()) {
@@ -45,7 +78,7 @@
       </div>
     }
 
-    <!-- 5-Tab Clean Navigation (0 Icons, Borderless Status Text) -->
+    <!-- 4-Tab Clean Navigation (BIST/FC đã chuyển sang Chi tiết UAV) -->
     <nav class="ws-tab-bar" role="tablist" aria-label="Các tab chi tiết đánh giá">
       <button type="button" role="tab" [attr.aria-selected]="activeTab() === 'overview'" [class.active]="activeTab() === 'overview'" (click)="setTab('overview')">
         Tổng quan &amp; Bản đồ phạm vi
@@ -56,22 +89,16 @@
           {{ a.site.status === 'PASS' || a.site.status === 'FEASIBLE' ? 'Đạt' : 'Chưa đạt' }}
         </span>
       </button>
-      <button type="button" role="tab" [attr.aria-selected]="activeTab() === 'personnel'" [class.active]="activeTab() === 'personnel'" (click)="setTab('personnel')">
-        <span>Nhân sự ({{ a.personnelCandidates.length }})</span>
+      <button type="button" role="tab" data-testid="tab-personnel" [attr.aria-selected]="activeTab() === 'personnel'" [class.active]="activeTab() === 'personnel'" (click)="setTab('personnel')">
+        <span>Nhân sự ({{ roleBreakdown().totalRequired }})</span>
         <span class="tab-status" [class.is-pass]="roleBreakdown().hasAllThree" [class.is-fail]="!roleBreakdown().hasAllThree">
           {{ roleBreakdown().hasAllThree ? 'Đạt' : 'Chưa đạt' }}
         </span>
       </button>
-      <button type="button" role="tab" [attr.aria-selected]="activeTab() === 'uav'" [class.active]="activeTab() === 'uav'" (click)="setTab('uav')">
+      <button type="button" role="tab" data-testid="tab-uav" [attr.aria-selected]="activeTab() === 'uav'" [class.active]="activeTab() === 'uav'" (click)="setTab('uav')">
         <span>Thiết bị UAV ({{ a.uavCandidates.length }})</span>
         <span class="tab-status" [class.is-pass]="a.uav.status === 'PASS' || a.uav.status === 'READY'" [class.is-fail]="!(a.uav.status === 'PASS' || a.uav.status === 'READY')">
           {{ a.uav.status === 'PASS' || a.uav.status === 'READY' ? 'Đạt' : 'Chưa đạt' }}
-        </span>
-      </button>
-      <button type="button" role="tab" [attr.aria-selected]="activeTab() === 'technical'" [class.active]="activeTab() === 'technical'" (click)="setTab('technical')">
-        <span>Kiểm định kỹ thuật</span>
-        <span class="tab-status" [class.is-pass]="a.technical.status === 'PASS' || a.technical.status === 'HEALTHY'" [class.is-fail]="!(a.technical.status === 'PASS' || a.technical.status === 'HEALTHY')">
-          {{ a.technical.status === 'PASS' || a.technical.status === 'HEALTHY' ? 'Đạt' : 'Chưa đạt' }}
         </span>
       </button>
     </nav>
@@ -191,7 +218,7 @@
                   </div>
                 </div>
                 <div class="ws-weather-status">
-                  <span class="ws-sub-line tabular-nums">Quan trắc lúc {{ w.time | date:'HH:mm dd/MM/yyyy' }}</span>
+                  <span class="ws-sub-line tabular-nums">Quan trắc lúc {{ formatDateTime(w.time) }}</span>
                   <span [class]="w.isSafeToFly ? 'text-emerald-600 font-medium' : (w.warningLevel === 'high' ? 'text-rose-600 font-medium' : 'text-amber-700 font-medium')">
                     {{ w.isSafeToFly ? 'Đủ điều kiện an toàn bay' : (w.warningLevel === 'high' ? 'Không an toàn bay' : 'Cảnh báo gió mạnh') }}
                   </span>
@@ -225,7 +252,7 @@
 
           <div class="ws-conclusion-row">
             <div><span class="meta-label">Kết luận hệ thống:</span> {{ a.site.reason || 'Mặt bằng và hành lang lưới điện đáp ứng tiêu chuẩn an toàn bay UAV.' }}</div>
-            <div class="tabular-nums"><span class="meta-label">Thời điểm đánh giá:</span> {{ a.site.evaluatedAt ? (a.site.evaluatedAt | date:'dd/MM/yyyy HH:mm:ss') : 'Vừa cập nhật' }}</div>
+            <div class="tabular-nums"><span class="meta-label">Thời điểm đánh giá:</span> {{ formatDateTimeWithSeconds(a.site.evaluatedAt) }}</div>
           </div>
 
           <div class="app-table-scroll">
@@ -268,11 +295,11 @@
     @if (activeTab() === 'personnel') {
       <section class="ws-card">
         <div class="ws-card-header">
-          <div>
-            <h2>Đánh giá sẵn sàng nhân sự</h2>
+          <div data-testid="role-headcount-summary">
+            <h2>Định mức nhân sự theo vai trò (MF01)</h2>
             <p>
               Yêu cầu tối thiểu: {{ roleBreakdown().reqInspectors }} Phi công · {{ roleBreakdown().reqAnalysts }} Chuyên viên phân tích · {{ roleBreakdown().reqTechnicians }} Kỹ thuật viên
-              (Tổng {{ roleBreakdown().totalRequired }} người)
+              (Tổng {{ roleBreakdown().totalRequired }} người — chọn nhân sự đích danh ở bước tạo nhiệm vụ MF02)
             </p>
           </div>
           <div class="ws-quota-inline">
@@ -304,11 +331,11 @@
             aria-label="Lọc nhân sự"
             placeholder="Tìm theo tên, vai trò..."
             [value]="personnelSearch()"
-            (input)="personnelSearch.set($any($event.target).value)"
+            (input)="onPersonnelSearch($event)"
           />
 
           <label class="ws-check-inline">
-            <input type="checkbox" [checked]="onlyAvailableFilter()" (change)="onlyAvailableFilter.set($any($event.target).checked)" />
+            <input type="checkbox" [checked]="onlyAvailableFilter()" (change)="onOnlyAvailableChange($event)" />
             <span>Chỉ hiển thị người đang rảnh</span>
           </label>
         </div>
@@ -430,7 +457,9 @@
                       </span>
                     </td>
                     <td class="col-center">
-                      <span [class]="technicalColorClass(uav.technicalEligibility)">{{ technicalLabel(uav.technicalEligibility) }}</span>
+                      <span [class]="isDroneReady(uav) ? 'text-emerald-600 font-medium' : 'text-rose-600 font-medium'">
+                        {{ droneReadinessLabelFor(uav) }}
+                      </span>
                     </td>
                     <td class="col-center">
                       <span [class]="suitabilityColorClass(uav.suitability)" [title]="uav.suitabilityReason || ''">{{ suitabilityText(uav) }}</span>
@@ -447,14 +476,13 @@
                       </span>
                     </td>
                     <td class="col-center col-sticky-right">
-                      <button
-                        type="button"
+                      <a
                         class="app-btn-action"
-                        (click)="selectDroneForInspection(uav)"
-                        [attr.aria-label]="'Mở kiểm định kỹ thuật cho ' + uav.code"
+                        [routerLink]="['/drones', uav.id]"
+                        [attr.aria-label]="'Mở chi tiết UAV ' + uav.code"
                       >
-                        Kiểm định
-                      </button>
+                        Chi tiết UAV
+                      </a>
                     </td>
                   </tr>
                 }
@@ -465,231 +493,6 @@
       </section>
     }
 
-    <!-- TAB 5: DRONE TECHNICAL INSPECTION (Real Hardware USB & Real API Only — 0 Mock UI) -->
-    @if (activeTab() === 'technical') {
-      <section class="ws-card">
-        <div class="ws-card-header">
-          <div>
-            <h2>Bảng kiểm định kỹ thuật UAV</h2>
-            <p>Kiểm định 6 hệ thống con, nhận diện Flight Controller qua USB và lưu biên bản kiểm định thực tế</p>
-          </div>
-          <div class="ws-tech-controls">
-            <label class="filter-field">
-              <span class="filter-label">Thiết bị</span>
-              <select [value]="selectedDroneId()" (change)="onSelectDrone($any($event.target).value)">
-                @for (d of a.uavCandidates; track d.id) {
-                  <option [value]="d.id || d.code">{{ d.code }} - {{ d.model || 'UAV' }}</option>
-                }
-              </select>
-            </label>
-
-            @if (canInspectDrone()) {
-              <button
-                type="button"
-                class="app-btn-primary"
-                [disabled]="inspecting() || isFcDroneMismatch() || isFcUnregistered()"
-                (click)="runInspectionNow()"
-              >
-                @if (inspecting()) {
-                  Đang đo kiểm...
-                } @else if (isFcDroneMismatch()) {
-                  Khóa kiểm định (Lệch Drone)
-                } @else if (isFcUnregistered()) {
-                  Khóa kiểm định (FC chưa ghép nối)
-                } @else {
-                  Chạy kiểm định kỹ thuật
-                }
-              </button>
-            }
-          </div>
-        </div>
-
-        <div class="ws-card-body">
-          @if (isTechnician()) {
-            <div class="ws-banner is-info" role="note">
-              <span>Kỹ thuật viên: chọn UAV, kết nối Flight Controller qua USB nếu cần và thực hiện kiểm định kỹ thuật.</span>
-            </div>
-          }
-
-          <!-- Real Hardware Betaflight FC Card (USB Web Serial only, 0 Mock / Simulation) -->
-          <div class="ws-fc-box">
-            <div class="ws-fc-head">
-              <div>
-                <strong>Nhận diện &amp; ghép nối Flight Controller (USB MSP)</strong>
-                <div class="ws-sub-line">Đọc UID phần cứng qua Web Serial API để đối soát UAV trước khi đo kiểm</div>
-              </div>
-              <div class="ws-fc-actions">
-                @if (fcConnectionState() === 'connected') {
-                  <span class="text-emerald-600 font-medium">Đã kết nối USB Web Serial</span>
-                  <button type="button" class="app-btn-secondary btn-sm" (click)="disconnectFc()">Ngắt kết nối</button>
-                } @else if (fcConnectionState() === 'connecting') {
-                  <span class="text-amber-700 font-medium">Đang kết nối MSP...</span>
-                } @else {
-                  <span class="cell-muted">Chưa kết nối FC</span>
-                  <button type="button" class="app-btn-secondary btn-sm" (click)="connectRealFc()">Kết nối Betaflight FC (USB)</button>
-                }
-              </div>
-            </div>
-
-            @if (fcError(); as err) {
-              <div class="ws-banner is-danger" style="margin-top: 10px; margin-bottom: 0;">
-                <span><strong>Lỗi kết nối FC:</strong> {{ err }}</span>
-                <button type="button" class="app-btn-action" (click)="disconnectFc()">Đóng</button>
-              </div>
-            }
-
-            @if (fcMetadata(); as meta) {
-              <div class="ws-meta-grid" style="margin-top: 12px;">
-                <div class="ws-meta-item"><span class="meta-label">Hardware UID</span><strong class="meta-val tabular-nums">{{ meta.uid }}</strong></div>
-                <div class="ws-meta-item"><span class="meta-label">Bo mạch</span><span class="meta-val">{{ meta.boardIdentifier || 'STM32' }}</span></div>
-                <div class="ws-meta-item"><span class="meta-label">Firmware</span><span class="meta-val">{{ meta.firmwareName }} v{{ meta.firmwareVersion }}</span></div>
-                <div class="ws-meta-item"><span class="meta-label">Phương thức</span><span class="meta-val">Web Serial API (USB-VCP)</span></div>
-              </div>
-
-              @if (resolvingFc()) {
-                <div class="ws-banner is-info" style="margin-top: 10px; margin-bottom: 0;">
-                  <span>Đang tra cứu danh tính UAV cho FC UID {{ meta.uid }}...</span>
-                </div>
-              } @else {
-                @if (isFcMatchingAssessmentDrone()) {
-                  <div class="ws-banner is-success" style="margin-top: 10px; margin-bottom: 0;">
-                    <span>Xác thực thành công: FC UID {{ meta.uid }} khớp với {{ fcDrone()?.code }} ({{ fcDrone()?.name }}).</span>
-                  </div>
-                }
-                @if (isFcDroneMismatch()) {
-                  <div class="ws-banner is-danger" style="margin-top: 10px; margin-bottom: 0;">
-                    <span>Cảnh báo lệch thiết bị (BR-05): FC thuộc về {{ fcDrone()?.code }}, không khớp với {{ currentAssessmentDrone()?.code }}. Nút kiểm định đã bị khóa an toàn.</span>
-                  </div>
-                }
-                @if (isFcUnregistered()) {
-                  <div class="ws-banner is-warning ws-banner-stack" style="margin-top: 10px; margin-bottom: 0;">
-                    <span><strong>Flight Controller chưa đăng ký (BR-04):</strong> UID {{ meta.uid }} chưa được ghép nối với UAV nào.</span>
-                    <div class="ws-fc-actions">
-                      <select [value]="pairTargetDroneId()" (change)="pairTargetDroneId.set($any($event.target).value)" class="ws-inline-select">
-                        @for (d of a.uavCandidates; track d.id) {
-                          <option [value]="d.id || d.code">{{ d.code }} - {{ d.model || 'UAV' }}</option>
-                        }
-                      </select>
-                      <button type="button" class="app-btn-primary btn-sm" [disabled]="pairingFc() || !canInspectDrone()" (click)="pairFcToDrone()">
-                        {{ pairingFc() ? 'Đang ghép nối...' : 'Ghép nối với UAV' }}
-                      </button>
-                    </div>
-                    @if (pairingError()) { <span class="text-rose-600">{{ pairingError() }}</span> }
-                    @if (pairingSuccess()) { <span class="text-emerald-600">{{ pairingSuccess() }}</span> }
-                  </div>
-                }
-              }
-            }
-          </div>
-
-          @if (inspectionResult(); as insp) {
-            <div class="ws-meta-grid ws-insp-meta">
-              <div class="ws-meta-item">
-                <span class="meta-label">Trạng thái biên bản</span>
-                <span [class]="statusColorClass(insp.status)">{{ statusLabel(insp.status) }}</span>
-              </div>
-              <div class="ws-meta-item">
-                <span class="meta-label">Phiên bản nguồn</span>
-                <strong class="meta-val">{{ insp.sourceVersion || '—' }}</strong>
-              </div>
-              <div class="ws-meta-item">
-                <span class="meta-label">Chính sách kiểm định</span>
-                <strong class="meta-val">{{ insp.policyVersion || '—' }}</strong>
-              </div>
-              <div class="ws-meta-item">
-                <span class="meta-label">Nguồn dữ liệu</span>
-                <span class="meta-val">{{ insp.inspectionSource || '—' }}</span>
-              </div>
-              <div class="ws-meta-item">
-                <span class="meta-label">Hạn kiểm định</span>
-                <strong class="meta-val tabular-nums">{{ insp.validUntil ? (insp.validUntil | date:'dd/MM/yyyy HH:mm') : '—' }}</strong>
-              </div>
-              <div class="ws-meta-item">
-                <span class="meta-label">Sức khỏe kỹ thuật</span>
-                <span [class]="statusColorClass(insp.overallHealth)">{{ statusLabel(insp.overallHealth) }}</span>
-              </div>
-              <div class="ws-meta-item">
-                <span class="meta-label">Điều kiện bay</span>
-                <span [class]="statusColorClass(insp.eligibility)">{{ statusLabel(insp.eligibility) }}</span>
-              </div>
-            </div>
-
-            @if (insp.subsystems.length) {
-              <h3 class="ws-section-title">Tình trạng hệ thống con</h3>
-              <div class="ws-subsystems-grid">
-                @for (sub of insp.subsystems; track sub.id) {
-                  <div class="ws-subsystem-card">
-                    <div class="ws-subsystem-head">
-                      <strong>{{ sub.name }}</strong>
-                      <span [class]="statusColorClass(sub.status)">{{ statusLabel(sub.status) }}</span>
-                    </div>
-                    @if (sub.description) {
-                      <span class="ws-sub-line">{{ sub.description }}</span>
-                    }
-                  </div>
-                }
-              </div>
-            }
-
-            <h3 class="ws-section-title">Bảng thông số kiểm tra chi tiết</h3>
-            <div class="app-table-scroll">
-              <table class="app-data-table" style="min-width: 820px;">
-                <colgroup>
-                  <col style="width: 16%" />
-                  <col style="width: 24%" />
-                  <col style="width: 14%" />
-                  <col style="width: 10%" />
-                  <col style="width: 12%" />
-                  <col style="width: 12%" />
-                  <col style="width: 12%" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>Hệ thống con</th>
-                    <th>Thông số kiểm tra</th>
-                    <th>Giá trị thực đo</th>
-                    <th>Đơn vị</th>
-                    <th class="col-center">Bắt buộc</th>
-                    <th class="col-center">Mức cảnh báo</th>
-                    <th class="col-center">Kết quả</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (metric of insp.metrics; track $index) {
-                    <tr>
-                      <td class="cell-primary">{{ metric.subsystem }}</td>
-                      <td class="cell-secondary">{{ metric.metric }}</td>
-                      <td class="tabular-nums cell-primary">{{ metric.value }}</td>
-                      <td class="cell-secondary">{{ metric.unit || '—' }}</td>
-                      <td class="col-center cell-secondary">{{ metric.required ? 'Có' : 'Không' }}</td>
-                      <td class="col-center">
-                        <span [class]="severityColorClass(metric.severity)">{{ severityVietnamese(metric.severity) }}</span>
-                      </td>
-                      <td class="col-center">
-                        @if (metric.passed === true) {
-                          <span class="text-emerald-600 font-medium">Đạt</span>
-                        } @else if (metric.passed === false) {
-                          <span class="text-rose-600 font-medium">Không đạt</span>
-                        } @else {
-                          <span class="cell-muted">Chưa đo</span>
-                        }
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          } @else {
-            <div class="ws-empty-tech">
-              <p>Chưa có biên bản kiểm định kỹ thuật gần nhất cho UAV này.</p>
-              @if (canInspectDrone()) {
-                <button type="button" class="app-btn-primary" (click)="runInspectionNow()">Nhập biên bản kiểm định</button>
-              }
-            </div>
-          }
-        </div>
-      </section>
-    }
 
     <!-- Clean Bottom Action Footer (only when actions exist) -->
     @if ((!isCancelled() && !isCompleted() && canManage()) || canProceedToMf02() || (canManage() && !isCancelled() && !isCompleted())) {
@@ -697,7 +500,7 @@
         <div class="ws-footer-actions">
           @if (!isCancelled() && !isCompleted() && canManage()) {
             <button type="button" class="app-btn-danger" [disabled]="busy()" (click)="openCancelModal()">Hủy đánh giá</button>
-            <button type="button" class="app-btn-secondary" [disabled]="busy()" (click)="reevaluate()">
+            <button type="button" class="app-btn-secondary" data-testid="re-evaluate-btn" [disabled]="busy()" (click)="reevaluate()">
               {{ busy() ? 'Đang đánh giá...' : 'Đánh giá lại' }}
             </button>
           }
@@ -746,7 +549,7 @@
             rows="3"
             placeholder="Nhập lý do hủy bản đánh giá..."
             [value]="cancelReason()"
-            (input)="cancelReason.set($any($event.target).value)"
+            (input)="onCancelReasonInput($event)"
           ></textarea>
         </div>
         <div class="ws-modal-footer">
@@ -759,45 +562,4 @@
     </div>
   }
 
-  <!-- Real Technical Inspection Checklist Modal -->
-  @if (showChecklistModal()) {
-    <div class="ws-modal-backdrop" tabindex="-1" (click)="closeChecklistModal()" (keydown.escape)="closeChecklistModal()" role="dialog" aria-modal="true" aria-labelledby="checklistModalTitle">
-      <div class="ws-modal-dialog" style="max-width: 540px;" tabindex="-1" (click)="$event.stopPropagation()" (keydown.escape)="closeChecklistModal()">
-        <div class="ws-modal-header">
-          <h3 id="checklistModalTitle">Nhập kết quả kiểm định kỹ thuật UAV</h3>
-          <button type="button" class="app-btn-action" (click)="closeChecklistModal()" [disabled]="checklistSubmitting()">Đóng</button>
-        </div>
-        <div class="ws-modal-body">
-          <p class="ws-modal-text">
-            Thiết bị: <strong>{{ currentAssessmentDrone()?.code || selectedDroneId() }}</strong> ({{ currentAssessmentDrone()?.model || 'UAV' }}).
-            Nhập thông số đo thực tế trước bay (pin &lt; 30% hoặc RF &lt; 60% sẽ tự đánh giá không đạt).
-          </p>
-          <div class="ws-checklist-grid">
-            <div class="ws-field">
-              <label for="checklistBattery" class="ws-field-label">Mức pin thực tế (%)</label>
-              <input id="checklistBattery" type="number" min="0" max="100" class="ws-input tabular-nums" [value]="checklistBatteryLevel()" (input)="checklistBatteryLevel.set(+$any($event.target).value)" />
-            </div>
-            <div class="ws-field">
-              <label for="checklistGps" class="ws-field-label">Số vệ tinh GPS/RTK</label>
-              <input id="checklistGps" type="number" min="0" max="40" class="ws-input tabular-nums" [value]="checklistGpsSats()" (input)="checklistGpsSats.set(+$any($event.target).value)" />
-            </div>
-            <div class="ws-field">
-              <label for="checklistRf" class="ws-field-label">Tín hiệu RF viễn trắc (%)</label>
-              <input id="checklistRf" type="number" min="0" max="100" class="ws-input tabular-nums" [value]="checklistRfQuality()" (input)="checklistRfQuality.set(+$any($event.target).value)" />
-            </div>
-            <div class="ws-field">
-              <label for="checklistNotes" class="ws-field-label">Ghi chú biên bản</label>
-              <input id="checklistNotes" type="text" class="ws-input" [value]="checklistNotes()" (input)="checklistNotes.set($any($event.target).value)" />
-            </div>
-          </div>
-        </div>
-        <div class="ws-modal-footer">
-          <button type="button" class="app-btn-secondary" (click)="closeChecklistModal()" [disabled]="checklistSubmitting()">Đóng</button>
-          <button type="button" class="app-btn-primary" (click)="submitInspectionChecklist()" [disabled]="checklistSubmitting()">
-            {{ checklistSubmitting() ? 'Đang lưu...' : 'Lưu biên bản kiểm định' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  }
 </div>

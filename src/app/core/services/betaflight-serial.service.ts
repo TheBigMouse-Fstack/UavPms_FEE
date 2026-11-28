@@ -297,7 +297,7 @@ export class BetaflightSerialService {
     const uidResponse = await this.sendMspCommand(MSP_UID);
     const uid = this.parseMspUid(uidResponse);
 
-    let firmwareName = 'Betaflight';
+    let firmwareName: string | undefined;
     try {
       const variantResp = await this.sendMspCommand(MSP_FC_VARIANT);
       if (variantResp && variantResp.length >= 4) {
@@ -306,37 +306,37 @@ export class BetaflightSerialService {
         else if (variantStr === 'INAV') firmwareName = 'INAV';
       }
     } catch {
-      // Giữ tên firmware mặc định nếu mạch điều khiển không phản hồi lệnh MSP_FC_VARIANT
+      // Thiếu phản hồi MSP_FC_VARIANT thì để trống firmware.
     }
 
-    let firmwareVersion = '4.5.0';
+    let firmwareVersion: string | undefined;
     try {
       const versionResp = await this.sendMspCommand(MSP_FC_VERSION);
       if (versionResp && versionResp.length >= 3) {
         firmwareVersion = `${versionResp[0]}.${versionResp[1]}.${versionResp[2]}`;
       }
     } catch {
-      // Giữ phiên bản firmware mặc định nếu không đọc được MSP_FC_VERSION
+      // Phiên bản firmware là thông tin tùy chọn.
     }
 
-    let boardIdentifier = 'STM32F405';
+    let boardIdentifier: string | undefined;
     try {
       const boardResp = await this.sendMspCommand(MSP_BOARD_INFO);
       if (boardResp && boardResp.length >= 4) {
-        boardIdentifier = String.fromCharCode(...boardResp.slice(0, 4)).trim() || 'STM32F405';
+        boardIdentifier = String.fromCharCode(...boardResp.slice(0, 4)).trim() || undefined;
       }
     } catch {
-      // Giữ mã board mặc định nếu không đọc được MSP_BOARD_INFO
+      // Mã bo mạch là thông tin tùy chọn.
     }
 
-    let deviceName = 'Betaflight-Drone';
+    let deviceName: string | undefined;
     try {
       const nameResp = await this.sendMspCommand(MSP_NAME);
       if (nameResp && nameResp.length > 0) {
-        deviceName = String.fromCharCode(...nameResp).trim() || 'Betaflight-Drone';
+        deviceName = String.fromCharCode(...nameResp).trim() || undefined;
       }
     } catch {
-      // Giữ tên thiết bị mặc định nếu không đọc được MSP_NAME
+      // Tên thiết bị là thông tin tùy chọn.
     }
 
     return {
@@ -345,13 +345,12 @@ export class BetaflightSerialService {
       firmwareName,
       firmwareVersion,
       deviceName,
-      apiVersion: 'MSP v1.45',
     };
   }
 
   private parseMspUid(payload: Uint8Array): string {
-    if (!payload || payload.length < 12) {
-      return 'BF-UID-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    if (payload.length !== 12) {
+      throw new Error('Không đọc được UID hợp lệ của Flight Controller.');
     }
     return Array.from(payload)
       .map((b) => b.toString(16).padStart(2, '0'))

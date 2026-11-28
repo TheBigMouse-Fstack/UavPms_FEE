@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { environment } from '../../../../environments/environment';
 import { DroneManagementApi } from './drone-management-api';
 
-describe('DroneManagementApi', () => {
+describe('DroneManagementApi (FE-REQ-101)', () => {
   let service: DroneManagementApi;
   let httpMock: HttpTestingController;
 
@@ -35,30 +35,137 @@ describe('DroneManagementApi', () => {
     expect(codes).toEqual(['UAV-001']);
   });
 
-  it('posts the basic technical check with backend field names', () => {
-    const checkPayload = {
-      frameBodyPassed: true,
-      frameBodyNotes: 'OK',
-      propellersPassed: true,
-      motorsPassed: true,
-      cameraPayloadPassed: true,
-      batteryPassed: true,
-      batteryPercent: 95,
-      gpsPassed: true,
-      communicationPassed: true,
-      communicationSignalInfo: '-55 dBm',
-      flightControllerPassed: true,
-      flightControllerUid: 'BF-F405-A1B2C3D4',
-    };
-    let status = '';
-    service.submitBasicTechnicalCheck('d-1', checkPayload).subscribe((res) => (status = res.status));
+  it('submits manual/FC BIST inspection to POST /uavs/{droneId}/inspections without preMissionAssessmentId', () => {
+    let resultReadiness = '';
+    service
+      .submitUavInspection('drone-syn-1', {
+        sourceType: 'manual',
+        conclusion: 'Passed',
+        notes: 'Kiểm định thủ công đạt chuẩn',
+        metrics: [
+          {
+            metricCode: 'BATTERY_PERCENT',
+            subsystem: 'Power',
+            numericValue: 96,
+            unit: '%',
+            passed: true,
+            isRequired: true,
+          },
+        ],
+      })
+      .subscribe((res) => {
+        resultReadiness = res.readiness;
+      });
 
-    const req = httpMock.expectOne(`${environment.apiBaseUrl}/drones/d-1/basic-technical-check`);
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/uavs/drone-syn-1/inspections`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body.frameBodyNotes).toBe('OK');
-    expect(req.request.body.communicationSignalInfo).toBe('-55 dBm');
-    req.flush({ id: 'i-1', status: 'Passed', health: 'Healthy', metricCount: 8 });
-    expect(status).toBe('Passed');
+    expect(req.request.body.sourceType).toBe('manual');
+    expect(req.request.body.conclusion).toBe('Passed');
+    expect(req.request.body.notes).toBe('Kiểm định thủ công đạt chuẩn');
+    expect(req.request.body.metrics.length).toBe(1);
+    expect('preMissionAssessmentId' in req.request.body).toBe(false);
+
+    req.flush({
+      id: 'insp-1',
+      droneId: 'drone-syn-1',
+      sourceType: 'manual',
+      conclusion: 'Passed',
+      status: 'Passed',
+      health: 'Healthy',
+      readiness: 'Ready',
+      completedAt: '2026-11-27T08:00:00Z',
+      notes: 'Kiểm định thủ công đạt chuẩn',
+      metricCount: 1,
+    });
+
+    expect(resultReadiness).toBe('Ready');
+  });
+
+  it('fetches latest UAV inspection from GET /uavs/{droneId}/inspections/latest and handles malformed payload safely', () => {
+    let latestId: string | null = null;
+    let latestReadiness = '';
+    service.getLatestUavInspection('drone-syn-1').subscribe((res) => {
+      latestId = res?.id ?? null;
+      latestReadiness = res?.readiness ?? '';
+    });
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/uavs/drone-syn-1/inspections/latest`);
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      data: {
+        id: 'insp-latest',
+        droneId: 'drone-syn-1',
+        status: 'Failed',
+        health: 'Critical',
+        completedAt: '2026-11-27T09:30:00Z',
+        notes: null,
+      },
+    });
+
+    expect(latestId).toBe('insp-latest');
+    expect(latestReadiness).toBe('MaintenanceRequired');
+  });
+
+  it('fetches technical inspection history sorted newest-first (DESC) and ignores null/malformed entries', () => {
+    let ids: string[] = [];
+    service.getTechnicalInspections('drone-syn-1').subscribe((list) => {
+      ids = list.map((item) => item.id);
+    });
+
+    const req = httpMock.expectOne((r) => r.url === `${environment.apiBaseUrl}/drones/drone-syn-1/technical-inspections`);
+    expect(req.request.method).toBe('GET');
+    req.flush([
+      { id: 'older', status: 'Passed', health: 'Healthy', completedAt: '2026-11-20T01:00:00Z', metricCount: 4 },
+      null,
+      { id: 'newest', status: 'Failed', health: 'Critical', completedAt: '2026-11-27T10:00:00Z', metricCount: 4 },
+      { id: 'middle', status: 'Passed', health: 'Healthy', completedAt: '2026-11-25T05:00:00Z', metricCount: 4 },
+    ]);
+
+    expect(ids).toEqual(['newest', 'middle', 'older']);
+  });
+
+  it('pairs and unpairs Flight Controller via POST and DELETE /drones/{droneId}/flight-controller', () => {
+    let pairedUid = '';
+    service
+      .pairFlightController('drone-syn-1', {
+        flightControllerUid: 'FC-SYN-001',
+        boardIdentifier: 'SYN-BOARD',
+        firmwareName: 'Betaflight',
+        firmwareVersion: '4.5.1',
+      })
+      .subscribe((res) => (pairedUid = res.flightControllerUid));
+
+    const postReq = httpMock.expectOne(`${environment.apiBaseUrl}/drones/drone-syn-1/flight-controller`);
+    expect(postReq.request.method).toBe('POST');
+    expect(postReq.request.body.flightControllerUid).toBe('FC-SYN-001');
+    postReq.flush({
+      id: 'fc-bind-1',
+      droneId: 'drone-syn-1',
+      flightControllerUid: 'FC-SYN-001',
+      pairedAt: '2026-11-27T07:00:00Z',
+      isActive: true,
+    });
+    expect(pairedUid).toBe('FC-SYN-001');
+
+    let unpaired = false;
+    service.unpairFlightController('drone-syn-1').subscribe(() => (unpaired = true));
+    const deleteReq = httpMock.expectOne(`${environment.apiBaseUrl}/drones/drone-syn-1/flight-controller`);
+    expect(deleteReq.request.method).toBe('DELETE');
+    deleteReq.flush({});
+    expect(unpaired).toBe(true);
+  });
+
+  it('propagates 403 Forbidden error from technical inspections endpoint', () => {
+    let errorStatus = 0;
+    service.getTechnicalInspections('drone-syn-1').subscribe({
+      error: (err: HttpErrorResponse) => {
+        errorStatus = err.status;
+      },
+    });
+
+    const req = httpMock.expectOne((r) => r.url === `${environment.apiBaseUrl}/drones/drone-syn-1/technical-inspections`);
+    req.flush({ errorCode: 'DRONE_ACCESS_DENIED' }, { status: 403, statusText: 'Forbidden' });
+    expect(errorStatus).toBe(403);
   });
 
   it('requests the GIS scope drone estimation', () => {

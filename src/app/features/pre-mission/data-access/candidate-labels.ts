@@ -21,11 +21,11 @@ const PERSONNEL_REASON_LABELS: Readonly<Record<string, string>> = {
 };
 
 const TECHNICAL_LABELS: Readonly<Record<UavTechnicalEligibility, string>> = {
-  ELIGIBLE: 'Đạt – kiểm định còn hạn',
-  REQUIRES_INSPECTION: 'Cần kiểm định',
-  CRITICAL: 'Không đạt (Critical)',
-  DEGRADED: 'Suy giảm',
-  UNKNOWN: 'Chưa xác định',
+  ELIGIBLE: 'Đạt chuẩn / Sẵn sàng',
+  REQUIRES_INSPECTION: 'Không đạt / Cần bảo trì',
+  CRITICAL: 'Không đạt / Cần bảo trì',
+  DEGRADED: 'Không đạt / Cần bảo trì',
+  UNKNOWN: 'Không đạt / Cần bảo trì',
 };
 
 const TECHNICAL_TONES: Readonly<Record<UavTechnicalEligibility, 'pass' | 'warning' | 'fail' | 'neutral'>> = {

@@ -1,0 +1,333 @@
+<div class="ops-page drone-detail-page">
+  <header class="page-header">
+    <div>
+      <nav class="page-breadcrumb" aria-label="Đường dẫn">
+        <a routerLink="/dashboard">Tổng quan</a>
+        <span class="separator" aria-hidden="true">/</span>
+        <a routerLink="/drones">Quản lý UAV</a>
+        <span class="separator" aria-hidden="true">/</span>
+        <strong>{{ drone()?.code || 'Chi tiết UAV' }}</strong>
+      </nav>
+      <h1>{{ drone()?.name || 'Chi tiết phương tiện UAV' }}</h1>
+      <p>Kiểm định kỹ thuật BIST, kết nối Flight Controller và theo dõi lịch sử tình trạng sẵn sàng bay.</p>
+    </div>
+    <div class="head-actions">
+      <a class="app-btn-secondary" routerLink="/drones">Quay lại danh sách UAV</a>
+      <button type="button" class="app-btn-secondary" (click)="loadDroneDetail()" [disabled]="loading()">
+        Làm mới
+      </button>
+    </div>
+  </header>
+
+  @if (pageError()) {
+    <div class="app-error-banner" role="alert">
+      <span>{{ pageError() }}</span>
+      <button type="button" class="app-btn-action" (click)="loadDroneDetail()">Thử lại</button>
+    </div>
+  }
+
+  @if (loading()) {
+    <section class="detail-card" role="status" aria-live="polite">
+      <p class="muted">Đang tải thông tin chi tiết UAV...</p>
+    </section>
+  } @else if (drone(); as current) {
+    <section class="detail-card summary-card" aria-label="Thông tin tổng quan UAV">
+      <div class="summary-head">
+        <div>
+          <span class="drone-code">{{ current.code }}</span>
+          <h2>{{ current.name }} — {{ current.model }}</h2>
+        </div>
+        <span
+          class="readiness-badge"
+          [class.readiness-ready]="readiness() === 'Ready'"
+          [class.readiness-maint]="readiness() !== 'Ready'"
+          data-testid="drone-readiness-badge"
+        >
+          {{ readinessText() }}
+        </span>
+      </div>
+
+      <dl class="meta-grid">
+        <div>
+          <dt>Trạng thái vận hành</dt>
+          <dd>{{ operationalStatusText(current.operationalStatus) }}</dd>
+        </div>
+        <div>
+          <dt>Khu vực quản lý</dt>
+          <dd>{{ current.assignedRegionName || 'Chưa phân vùng' }}</dd>
+        </div>
+        <div>
+          <dt>Số sê-ri</dt>
+          <dd>{{ current.serialNumber || 'Chưa cập nhật' }}</dd>
+        </div>
+        <div>
+          <dt>Thời lượng / Tầm bay</dt>
+          <dd>{{ current.flightEnduranceMinutes }} phút · {{ current.operationalRangeKm }} km</dd>
+        </div>
+        <div>
+          <dt>Mức pin hiện tại</dt>
+          <dd>
+            @if (current.batteryLevel !== null && current.batteryLevel !== undefined) {
+              {{ current.batteryLevel }}%
+            } @else {
+              Chưa có số đo
+            }
+          </dd>
+        </div>
+        <div>
+          <dt>Tải trọng camera</dt>
+          <dd>{{ current.cameraPayloadInfo || 'Chưa khai báo' }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <div class="detail-grid">
+      <!-- Khu vực Flight Controller -->
+      <section class="detail-card" aria-label="Thông tin Flight Controller">
+        <div class="section-head">
+          <h2>Flight Controller (FC)</h2>
+          @if (!canEditBist()) {
+            <span class="readonly-pill">Chỉ đọc</span>
+          }
+        </div>
+
+        @if (fcError()) {
+          <div class="app-error-banner" role="alert">{{ fcError() }}</div>
+        }
+        @if (fcSuccess()) {
+          <div class="success-banner" role="status">{{ fcSuccess() }}</div>
+        }
+
+        @if (current.activeFlightController; as fc) {
+          <dl class="fc-meta">
+            <div>
+              <dt>Mã UID</dt>
+              <dd class="mono">{{ fc.flightControllerUid }}</dd>
+            </div>
+            <div>
+              <dt>Bo mạch</dt>
+              <dd>{{ fc.boardIdentifier || 'Chưa khai báo' }}</dd>
+            </div>
+            <div>
+              <dt>Firmware</dt>
+              <dd>{{ fc.firmwareName || 'Chưa khai báo' }} {{ fc.firmwareVersion || '' }}</dd>
+            </div>
+            <div>
+              <dt>Ghép nối lúc</dt>
+              <dd>{{ formatDateTime(fc.pairedAt) }}</dd>
+            </div>
+          </dl>
+        } @else {
+          <p class="muted">UAV hiện chưa ghép nối Flight Controller.</p>
+        }
+
+        @if (canEditBist()) {
+          <div class="fc-actions">
+            <button
+              type="button"
+              class="app-btn-secondary"
+              data-testid="fc-connect-btn"
+              [disabled]="fcBusy() || !serialSupported"
+              (click)="readFlightControllerSerial()"
+            >
+              {{ serialState() === 'connecting' ? 'Đang đọc Serial...' : 'Đọc FC qua Serial' }}
+            </button>
+            @if (current.activeFlightController) {
+              <button
+                type="button"
+                class="app-btn-danger"
+                data-testid="fc-unpair-btn"
+                [disabled]="fcBusy()"
+                (click)="unpairFlightController()"
+              >
+                Hủy ghép nối FC
+              </button>
+            }
+          </div>
+
+          <form [formGroup]="fcForm" (ngSubmit)="pairFlightController()" class="fc-form" data-testid="fc-pair-form">
+            <div class="form-row">
+              <label for="fcUid">Mã định danh FC (UID) <span class="required">*</span></label>
+              <input id="fcUid" type="text" formControlName="flightControllerUid" placeholder="Ví dụ: BF-F405-001" />
+            </div>
+            <div class="form-two-col">
+              <div class="form-row">
+                <label for="fcBoard">Bo mạch</label>
+                <input id="fcBoard" type="text" formControlName="boardIdentifier" placeholder="Ví dụ: MATEKF722" />
+              </div>
+              <div class="form-row">
+                <label for="fcFw">Phiên bản Firmware</label>
+                <input id="fcFw" type="text" formControlName="firmwareVersion" placeholder="Ví dụ: 4.5.1" />
+              </div>
+            </div>
+            <button type="submit" class="app-btn-primary" [disabled]="fcBusy()">
+              {{ fcBusy() ? 'Đang lưu...' : 'Lưu ghép nối FC' }}
+            </button>
+          </form>
+        }
+      </section>
+
+      <!-- Khu vực nhập tay BIST / Sức khỏe Drone -->
+      <section class="detail-card" aria-label="Kiểm định kỹ thuật BIST">
+        <div class="section-head">
+          <h2>Kiểm định kỹ thuật BIST &amp; Sức khỏe UAV</h2>
+          @if (!canEditBist()) {
+            <span class="readonly-pill">Chỉ đọc</span>
+          }
+        </div>
+
+        @if (missingMetricLabels().length) {
+          <div class="app-error-banner" role="alert" id="missingMetricsAlert" data-testid="missing-metrics-alert">
+            <span>
+              Thiếu thông số bắt buộc: {{ missingMetricLabels().join(', ') }}.
+              @if (canEditBist()) {
+                Nhập số đo hoặc kết quả kiểm tra thực tế vào biểu mẫu bên dưới.
+              }
+            </span>
+          </div>
+        }
+
+        @if (canEditBist()) {
+          @if (bistError()) {
+            <div class="app-error-banner" role="alert">{{ bistError() }}</div>
+          }
+          @if (bistSuccess()) {
+            <div class="success-banner" role="status">{{ bistSuccess() }}</div>
+          }
+
+          <form
+            [formGroup]="bistForm"
+            [attr.aria-describedby]="missingMetricLabels().length ? 'missingMetricsAlert' : null"
+            (ngSubmit)="submitInspection()"
+            class="bist-form"
+            data-testid="bist-manual-form"
+          >
+            <div class="form-two-col">
+              <div class="form-row">
+                <label for="bistSource">Nguồn kiểm định</label>
+                <select id="bistSource" formControlName="sourceType">
+                  <option value="manual">Nhập thủ công</option>
+                  <option value="fc">Đọc từ Flight Controller</option>
+                  <option value="bist">Kiểm định BIST</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label for="bistConclusion">Kết luận kiểm định</label>
+                <select id="bistConclusion" formControlName="conclusion">
+                  <option value="Passed">Đạt chuẩn / Sẵn sàng</option>
+                  <option value="Failed">Không đạt / Cần bảo trì</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-two-col">
+              <div class="form-row">
+                <label for="bistBattery">Dung lượng pin (%)</label>
+                <input id="bistBattery" type="number" min="0" max="100" formControlName="batteryPercent" />
+              </div>
+              <div class="form-row">
+                <label for="bistVoltage">Điện áp pin (V)</label>
+                <input id="bistVoltage" type="number" step="0.1" min="0" formControlName="batteryVoltage" />
+              </div>
+              <div class="form-row">
+                <label for="bistGps">Số vệ tinh GNSS</label>
+                <input id="bistGps" type="number" min="0" formControlName="gpsSatelliteCount" />
+              </div>
+              <div class="form-row">
+                <label for="bistRf">Tín hiệu vô tuyến (%)</label>
+                <input id="bistRf" type="number" min="0" max="100" formControlName="rfSignalQuality" />
+              </div>
+            </div>
+
+            <fieldset class="checklist-fieldset">
+              <legend>Hạng mục kiểm tra cơ khí &amp; tải trọng</legend>
+              @for (check of bistCheckFields; track check.field) {
+                <div class="form-row">
+                  <label [for]="check.field">{{ check.label }}</label>
+                  <select [id]="check.field" [formControlName]="check.field">
+                    <option [ngValue]="null">Chưa kiểm tra</option>
+                    <option [ngValue]="true">Đạt</option>
+                    <option [ngValue]="false">Không đạt</option>
+                  </select>
+                </div>
+              }
+            </fieldset>
+
+            <div class="form-row">
+              <label for="bistNotes">Ghi chú kiểm định</label>
+              <textarea
+                id="bistNotes"
+                rows="3"
+                formControlName="notes"
+                data-testid="bist-notes-input"
+                placeholder="Ghi nhận tình trạng kỹ thuật, linh kiện cần lưu ý..."
+              ></textarea>
+            </div>
+
+            <button
+              type="submit"
+              class="app-btn-primary"
+              data-testid="bist-submit-btn"
+              [disabled]="submittingBist()"
+            >
+              {{ submittingBist() ? 'Đang lưu kết quả...' : 'Lưu kết quả kiểm định' }}
+            </button>
+          </form>
+        } @else {
+          <p class="muted">
+            Tài khoản hiện tại chỉ có quyền xem trạng thái kỹ thuật. Chỉ Kỹ thuật viên hoặc Quản trị hệ thống mới được
+            thao tác kiểm định BIST và ghép nối Flight Controller.
+          </p>
+        }
+      </section>
+    </div>
+
+    <!-- Lịch sử kiểm định kỹ thuật (mới nhất lên đầu, UTC+7) -->
+    <section class="detail-card" aria-label="Lịch sử kiểm định kỹ thuật">
+      <div class="section-head">
+        <h2>Lịch sử kiểm định kỹ thuật</h2>
+      </div>
+
+      @if (historyError()) {
+        <div class="app-error-banner" role="alert">{{ historyError() }}</div>
+      } @else if (historyLoading()) {
+        <p class="muted" role="status">Đang tải lịch sử kiểm định...</p>
+      } @else if (!history().length) {
+        <p class="muted">Chưa có bản ghi kiểm định kỹ thuật nào cho UAV này.</p>
+      } @else {
+        <div class="app-table-scroll">
+          <table class="app-data-table">
+            <thead>
+              <tr>
+                <th>Thời gian (UTC+7)</th>
+                <th>Nguồn</th>
+                <th>Trạng thái</th>
+                <th>Kỹ thuật viên</th>
+                <th>Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of history(); track item.id) {
+                <tr data-testid="inspection-history-row">
+                  <td class="tabular-nums">{{ formatDateTime(item.completedAt) }}</td>
+                  <td>{{ sourceLabel(item.sourceType) }}</td>
+                  <td>
+                    <span
+                      class="readiness-pill"
+                      [class.readiness-ready]="item.readiness === 'Ready'"
+                      [class.readiness-maint]="item.readiness !== 'Ready'"
+                    >
+                      {{ readinessLabelFor(item) }}
+                    </span>
+                  </td>
+                  <td>{{ item.technicianName || 'Hệ thống' }}</td>
+                  <td>{{ item.notes || 'Không có ghi chú' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  }
+</div>

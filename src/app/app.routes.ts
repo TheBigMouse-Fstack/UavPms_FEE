@@ -30,6 +30,7 @@ export const routes: Routes = [
       { path: 'gis', canActivate: [roleGuard(ROUTE_ROLES.gis)], loadComponent: () => import('./features/gis/pages/gis-monitoring/gis-monitoring').then((m) => m.GisMonitoring), title: 'Bản đồ GIS Lưới điện | UAV-PMS' },
       // Every role may read the fleet (`GET /drones`); the page hides write actions by role.
       { path: 'drones', loadComponent: () => import('./features/drones/pages/drone-management/drone-management').then((m) => m.DroneManagement), title: 'Quản lý phương tiện UAV | UAV-PMS' },
+      { path: 'drones/:id', loadComponent: () => import('./features/drones/pages/drone-detail/drone-detail').then((m) => m.DroneDetail), title: 'Chi tiết phương tiện UAV | UAV-PMS' },
       { path: 'admin/drones', redirectTo: 'drones' },
       { path: 'admin/users', canActivate: [roleGuard(ROUTE_ROLES.administration)], loadComponent: () => import('./features/users/pages/user-management/user-management').then((m) => m.UserManagement), title: 'Quản lý người dùng | UAV-PMS' },
       { path: 'system/users', redirectTo: 'admin/users' },

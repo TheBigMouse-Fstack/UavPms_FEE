@@ -1,14 +1,13 @@
-import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, OnDestroy, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { Auth } from '../../../../core/auth/auth';
-import { isManagerRole } from '../../../../core/auth/roles';
 import { ToastService } from '../../../../core/toast/toast.service';
 import { AssessmentPage, PreMissionAssessment } from '../../../../models/pre-mission.models';
 import { Pagination } from '../../../../shared/components/pagination/pagination';
 import { describeHttpError } from '../../../../shared/errors/business-error-messages';
 import { statusColorClass, statusLabel } from '../../../../shared/status/status';
+import { canManagePreMission, formatVietnamDateTime, MultiRolePrincipal } from '../../../../shared/utils';
 import { NotificationsRealtime } from '../../../notifications/data-access/notifications-realtime';
 import { PreMissionApi } from '../../data-access/pre-mission-api';
 
@@ -28,7 +27,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 @Component({
   selector: 'app-assessment-list',
-  imports: [RouterLink, DatePipe, Pagination],
+  imports: [RouterLink, Pagination],
   templateUrl: './assessment-list.html',
   styleUrl: './assessment-list.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -48,8 +47,14 @@ export class AssessmentList implements OnDestroy {
   /** Shared total metadata per filter group (`status|search|pageSize`) so all pages stay consistent. */
   private readonly filterTotals = new Map<string, FilterTotalMeta>();
 
-  /** Create, re-evaluate and cancel are manager actions; technicians and inspectors read the list. */
-  protected readonly canManage = computed(() => isManagerRole(this.auth.user()?.role));
+  /** Create, re-evaluate and cancel are manager actions (multi-role union); others read the list. */
+  protected readonly canManage = computed(() =>
+    canManagePreMission(this.auth.user() as MultiRolePrincipal | null),
+  );
+
+  protected formatDateTime(iso?: string | null, fallback = 'Chưa cập nhật'): string {
+    return formatVietnamDateTime(iso, fallback);
+  }
 
   /** True ONLY on very first fetch before any data is loaded (renders Skeleton). */
   protected readonly initialLoading = signal(true);

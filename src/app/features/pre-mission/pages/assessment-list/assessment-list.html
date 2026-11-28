@@ -166,9 +166,9 @@
                 <td class="tabular-nums cell-secondary">
                   <span
                     class="cell-truncate"
-                    [title]="item.plannedStart | date: 'dd/MM/yyyy HH:mm'"
+                    [title]="formatDateTime(item.plannedStart)"
                   >
-                    {{ item.plannedStart | date: 'dd/MM/yyyy HH:mm' }}
+                    {{ formatDateTime(item.plannedStart) }}
                   </span>
                 </td>
                 <td class="col-center">
@@ -215,9 +215,9 @@
                   @if (item.validUntil) {
                     <span
                       [class]="isExpiredTime(item) ? statusColorClass('EXPIRED') : 'cell-secondary'"
-                      [title]="item.validUntil | date: 'dd/MM/yyyy HH:mm'"
+                      [title]="formatDateTime(item.validUntil)"
                     >
-                      {{ item.validUntil | date: 'dd/MM/yyyy HH:mm' }}
+                      {{ formatDateTime(item.validUntil) }}
                     </span>
                   } @else {
                     <span class="cell-muted">—</span>

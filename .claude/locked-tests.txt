@@ -4,3 +4,10 @@
 # 2. Verify RED test fails as expected, then append its relative path below (e.g. src/app/core/auth/silent-refresh.spec.ts).
 # 3. Return to SDD_PHASE=CODE -> PreToolUse hook blocks any edits to listed files (exit 2).
 # 4. Clear slice paths only after Judge approval & merge.
+
+# FE-REQ-101 — Tier 1 Drone Detail BIST/FC + MF01 headcount/region scope
+src/app/features/drones/data-access/drone-management-api.spec.ts
+src/app/features/drones/pages/drone-detail/drone-detail.acceptance.spec.ts
+src/app/features/pre-mission/data-access/pre-mission-api.spec.ts
+src/app/features/pre-mission/pages/assessment-create/assessment-create.acceptance.spec.ts
+src/app/features/pre-mission/pages/assessment-workspace/assessment-workspace.acceptance.spec.ts

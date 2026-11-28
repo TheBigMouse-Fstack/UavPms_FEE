@@ -131,74 +131,74 @@
         }
       </div>
 
-      <!-- Phần 3: Định mức nhân sự & Giới hạn UAV (2x2 gọn gàng, 100% tiếng Việt) -->
+      <!-- Phần 3: Định mức nhân sự (chỉ nhập 3 số lượng, không chọn đích danh) -->
       <div class="form-section">
         <div class="section-head">
-          <h2 id="quotas-title">3. Định mức nhân sự &amp; Giới hạn thiết bị bay</h2>
+          <h2 id="quotas-title">3. Định mức nhân sự &amp; Chọn UAV sẵn sàng</h2>
         </div>
         <div class="quota-grid">
           <div class="quota-row">
             <div class="quota-info">
-              <label for="requiredInspectors" class="quota-role-title">Phi công</label>
+              <label for="inspectorCount" class="quota-role-title">Phi công (Inspector)</label>
               <span class="quota-role-hint">Điều khiển UAV, quan sát hiện trường</span>
             </div>
             <div class="quota-stepper">
-              <button type="button" class="quota-stepper-btn" (click)="decrementQuota('requiredInspectors', 1)" aria-label="Giảm số phi công">-</button>
+              <button type="button" class="quota-stepper-btn" (click)="decrementQuota('inspectorCount', 1)" aria-label="Giảm số phi công">-</button>
               <input
-                id="requiredInspectors"
+                id="inspectorCount"
                 type="number"
                 min="1"
                 max="10"
                 class="quota-input tabular-nums"
-                formControlName="requiredInspectors"
+                formControlName="inspectorCount"
                 (keydown)="blockInvalidNumberKeys($event)"
-                (input)="onQuotaInput('requiredInspectors', 1, 10)"
+                (input)="onQuotaInput('inspectorCount', 1, 10)"
               />
-              <button type="button" class="quota-stepper-btn" (click)="incrementQuota('requiredInspectors', 10)" aria-label="Tăng số phi công">+</button>
+              <button type="button" class="quota-stepper-btn" (click)="incrementQuota('inspectorCount', 10)" aria-label="Tăng số phi công">+</button>
               <span class="unit-suffix">người</span>
             </div>
           </div>
 
           <div class="quota-row">
             <div class="quota-info">
-              <label for="requiredAnalysts" class="quota-role-title">Chuyên viên phân tích</label>
+              <label for="analystCount" class="quota-role-title">Chuyên viên phân tích (Analyst)</label>
               <span class="quota-role-hint">Phân tích hình ảnh, thẩm định AI</span>
             </div>
             <div class="quota-stepper">
-              <button type="button" class="quota-stepper-btn" (click)="decrementQuota('requiredAnalysts', 1)" aria-label="Giảm số chuyên viên phân tích">-</button>
+              <button type="button" class="quota-stepper-btn" (click)="decrementQuota('analystCount', 1)" aria-label="Giảm số chuyên viên phân tích">-</button>
               <input
-                id="requiredAnalysts"
+                id="analystCount"
                 type="number"
                 min="1"
                 max="10"
                 class="quota-input tabular-nums"
-                formControlName="requiredAnalysts"
+                formControlName="analystCount"
                 (keydown)="blockInvalidNumberKeys($event)"
-                (input)="onQuotaInput('requiredAnalysts', 1, 10)"
+                (input)="onQuotaInput('analystCount', 1, 10)"
               />
-              <button type="button" class="quota-stepper-btn" (click)="incrementQuota('requiredAnalysts', 10)" aria-label="Tăng số chuyên viên phân tích">+</button>
+              <button type="button" class="quota-stepper-btn" (click)="incrementQuota('analystCount', 10)" aria-label="Tăng số chuyên viên phân tích">+</button>
               <span class="unit-suffix">người</span>
             </div>
           </div>
 
           <div class="quota-row">
             <div class="quota-info">
-              <label for="requiredTechnicians" class="quota-role-title">Kỹ thuật viên</label>
-              <span class="quota-role-hint">Kiểm tra thiết bị, pin, cảm biến</span>
+              <label for="technicianCount" class="quota-role-title">Kỹ thuật viên (Technician)</label>
+              <span class="quota-role-hint">Hỗ trợ kỹ thuật hiện trường và bảo trì</span>
             </div>
             <div class="quota-stepper">
-              <button type="button" class="quota-stepper-btn" (click)="decrementQuota('requiredTechnicians', 1)" aria-label="Giảm số kỹ thuật viên">-</button>
+              <button type="button" class="quota-stepper-btn" (click)="decrementQuota('technicianCount', 1)" aria-label="Giảm số kỹ thuật viên">-</button>
               <input
-                id="requiredTechnicians"
+                id="technicianCount"
                 type="number"
                 min="1"
                 max="10"
                 class="quota-input tabular-nums"
-                formControlName="requiredTechnicians"
+                formControlName="technicianCount"
                 (keydown)="blockInvalidNumberKeys($event)"
-                (input)="onQuotaInput('requiredTechnicians', 1, 10)"
+                (input)="onQuotaInput('technicianCount', 1, 10)"
               />
-              <button type="button" class="quota-stepper-btn" (click)="incrementQuota('requiredTechnicians', 10)" aria-label="Tăng số kỹ thuật viên">+</button>
+              <button type="button" class="quota-stepper-btn" (click)="incrementQuota('technicianCount', 10)" aria-label="Tăng số kỹ thuật viên">+</button>
               <span class="unit-suffix">người</span>
             </div>
           </div>
@@ -224,6 +224,39 @@
               <span class="unit-suffix">UAV</span>
             </div>
           </div>
+        </div>
+
+        <div class="drone-selection-block">
+          <h3>Danh sách UAV trong khu vực (chỉ chọn UAV Đạt chuẩn / Sẵn sàng)</h3>
+          @if (!form.controls.regionId.value) {
+            <p class="muted">Chọn khu vực ở mục 1 để xem danh sách UAV sẵn sàng.</p>
+          } @else if (loadingDrones()) {
+            <p class="muted" role="status">Đang tải danh sách UAV...</p>
+          } @else {
+            <ul class="tower-pick-list" aria-label="Danh sách UAV theo khu vực">
+              @for (d of regionDrones(); track d.id) {
+                <li>
+                  <label class="tower-pick-item" [class.selected]="isDroneSelected(d.id)">
+                    <input
+                      type="checkbox"
+                      [attr.data-testid]="'drone-option-' + d.id"
+                      [checked]="isDroneSelected(d.id)"
+                      [disabled]="d.readiness !== 'Ready'"
+                      (change)="toggleDrone(d)"
+                    />
+                    <span class="tower-code">{{ d.code }}</span>
+                    <span class="tower-meta">{{ d.name }} · {{ d.model }}</span>
+                    <span class="tower-meta">{{ droneReadinessText(d) }}</span>
+                    @if (d.readiness !== 'Ready') {
+                      <a [routerLink]="['/drones', d.id]">Kiểm định tại Chi tiết UAV</a>
+                    }
+                  </label>
+                </li>
+              } @empty {
+                <li class="muted">Chưa có UAV nào được gán cho khu vực này.</li>
+              }
+            </ul>
+          }
         </div>
       </div>
 

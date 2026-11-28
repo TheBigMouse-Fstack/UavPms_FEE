@@ -448,6 +448,57 @@
   font-size: 13px;
 }
 
+.ws-headcount-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+
+  .error-msg {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #b91c1c;
+    font-size: 13px;
+  }
+}
+
+.ws-headcount-field {
+  display: grid;
+  gap: 5px;
+
+  label {
+    color: #334155;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  input {
+    width: 100%;
+    min-height: 38px;
+    padding: 7px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    box-sizing: border-box;
+  }
+
+  input:focus-visible {
+    outline: 3px solid rgba(29, 79, 145, 0.25);
+    outline-offset: 1px;
+    border-color: #1d4f91;
+  }
+}
+
+@media (max-width: 720px) {
+  .ws-headcount-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ws-filter-strip {
   display: flex;
   align-items: center;

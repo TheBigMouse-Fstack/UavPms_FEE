@@ -125,9 +125,13 @@
             @for (drone of paginatedDrones(); track drone.id) {
               <tr>
                 <td>
-                  <span class="cell-primary cell-truncate" [title]="drone.code + (drone.serialNumber ? ' · S/N: ' + drone.serialNumber : '')">
+                  <a
+                    class="cell-primary cell-truncate"
+                    [routerLink]="['/drones', drone.id]"
+                    [title]="drone.code + (drone.serialNumber ? ' · S/N: ' + drone.serialNumber : '')"
+                  >
                     {{ drone.code }}
-                  </span>
+                  </a>
                 </td>
                 <td>
                   <span class="cell-primary cell-truncate" [title]="drone.name + ' · ' + drone.model">
@@ -147,8 +151,8 @@
                 </td>
                 <td class="tabular-nums cell-secondary">
                   @if (drone.lastTechnicalInspection; as insp) {
-                    <span class="cell-truncate" [title]="globalStatusLabel(insp.status) + ' · ' + (insp.completedAt | date: 'dd/MM/yyyy HH:mm')">
-                      {{ insp.completedAt | date: 'dd/MM/yyyy HH:mm' }}
+                    <span class="cell-truncate" [title]="globalStatusLabel(insp.status) + ' · ' + formatDateTime(insp.completedAt)">
+                      {{ formatDateTime(insp.completedAt) }}
                     </span>
                   } @else {
                     <span class="cell-muted">Chưa kiểm tra</span>
@@ -196,12 +200,14 @@
     <div class="modal-body">
       @if (editingDrone(); as ed) {
       <div class="modal-sub-actions-bar">
+        @if (canPerformBist()) {
         <button type="button" class="app-btn-secondary" (click)="closeModal(); openFcModal(ed)">
           {{ ed.activeFlightController ? 'Cập nhật FC' : 'Ghép nối FC' }}
         </button>
         <button type="button" class="app-btn-secondary" (click)="openTechCheck(ed)">
           Kiểm tra kỹ thuật
         </button>
+        }
         <button type="button" class="app-btn-secondary" (click)="openHistory(ed)">
           Lịch sử kiểm định
         </button>
@@ -556,12 +562,12 @@
           <tbody>
             @for (insp of historyItems(); track insp.id) {
             <tr>
-              <td class="tabular-nums cell-secondary">{{ insp.completedAt ? (insp.completedAt | date:'dd/MM/yyyy HH:mm') : 'Chưa hoàn thành' }}</td>
+              <td class="tabular-nums cell-secondary">{{ formatDateTime(insp.completedAt) }}</td>
               <td class="col-center"><span [class]="statusColorClass(insp.status)">{{ globalStatusLabel(insp.status) }}</span></td>
-              <td class="col-center"><span [class]="statusColorClass(insp.health)">{{ globalStatusLabel(insp.health) }}</span></td>
-              <td class="cell-secondary">{{ insp.technicianName || '—' }}</td>
-              <td class="tabular-nums cell-secondary">{{ insp.validUntil ? (insp.validUntil | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
-              <td class="cell-secondary"><span class="cell-truncate" [title]="insp.notes || ''">{{ insp.notes || '—' }}</span></td>
+              <td class="col-center"><span [class]="statusColorClass(insp.health)">{{ healthLabel(insp.health) }}</span></td>
+              <td class="cell-secondary">{{ insp.technicianName || 'Hệ thống' }}</td>
+              <td class="tabular-nums cell-secondary">{{ formatDateTime(insp.validUntil, 'Không giới hạn') }}</td>
+              <td class="cell-secondary"><span class="cell-truncate" [title]="insp.notes || ''">{{ insp.notes || 'Không có ghi chú' }}</span></td>
             </tr>
             }
           </tbody>
@@ -571,7 +577,10 @@
     </div>
 
     <div class="modal-footer">
-      @if (canEditDrone()) {
+      <a class="app-btn-secondary" [routerLink]="['/drones', hd.id]" (click)="closeHistory()">
+        Mở trang chi tiết UAV
+      </a>
+      @if (canPerformBist()) {
       <button type="button" class="app-btn-secondary" (click)="closeHistory(); openFcModal(hd)"
         title="Ghép nối hoặc cập nhật Flight Controller">
         {{ hd.activeFlightController ? 'Cập nhật FC' : 'Ghép nối FC' }}
@@ -580,6 +589,8 @@
         title="Kiểm định kỹ thuật an toàn (Checklist)">
         Kiểm định an toàn
       </button>
+      }
+      @if (canEditDrone()) {
       <button type="button" class="app-btn-secondary" (click)="closeHistory(); openEdit(hd)"
         title="Chỉnh sửa thông số UAV">
         Chỉnh sửa

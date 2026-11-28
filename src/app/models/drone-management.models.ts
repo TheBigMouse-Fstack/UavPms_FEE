@@ -12,14 +12,84 @@ export const UAV_OPERATIONAL_STATUSES: readonly { readonly value: UavOperational
   { value: 'Lost', label: 'Mất thiết bị' },
 ];
 
+/** Trạng thái sẵn sàng chuẩn PR Lớn 1 (`BE-REQ-101`): `Ready` | `MaintenanceRequired`. */
+export type DroneReadinessStatus = 'Ready' | 'MaintenanceRequired';
+
+export const DRONE_READINESS_LABELS: Readonly<Record<DroneReadinessStatus, string>> = {
+  Ready: 'Đạt chuẩn / Sẵn sàng',
+  MaintenanceRequired: 'Không đạt / Cần bảo trì',
+};
+
+export function resolveDroneReadiness(input: {
+  readonly readiness?: string | null;
+  readonly technicalHealth?: string | null;
+  readonly status?: string | null;
+  readonly health?: string | null;
+}): DroneReadinessStatus {
+  const explicit = (input.readiness ?? '').trim().toLowerCase();
+  if (explicit === 'ready') return 'Ready';
+  if (explicit === 'maintenancerequired' || explicit === 'maintenance_required') return 'MaintenanceRequired';
+
+  const health = (input.technicalHealth ?? input.health ?? '').trim().toLowerCase();
+  const status = (input.status ?? '').trim().toLowerCase();
+  if (health === 'healthy' || status === 'passed') return 'Ready';
+  return 'MaintenanceRequired';
+}
+
+export function droneReadinessLabel(readiness: DroneReadinessStatus): string {
+  return DRONE_READINESS_LABELS[readiness];
+}
+
+export type UavInspectionSourceType = 'manual' | 'fc' | 'bist';
+export type UavInspectionConclusion = 'Passed' | 'Failed';
+
+export interface UavInspectionMetricInput {
+  readonly metricCode: string;
+  readonly subsystem: string;
+  readonly numericValue?: number | null;
+  readonly boolValue?: boolean | null;
+  readonly valueText?: string | null;
+  readonly unit?: string | null;
+  readonly passed?: boolean | null;
+  readonly isRequired?: boolean;
+  readonly critical?: boolean;
+  readonly severity?: string;
+}
+
+/** Body `POST /api/v1/uavs/{droneId}/inspections` (`BE-REQ-101`, không gửi `preMissionAssessmentId`). */
+export interface SubmitUavInspectionRequest {
+  readonly sourceType: UavInspectionSourceType;
+  readonly conclusion: UavInspectionConclusion;
+  readonly notes?: string | null;
+  readonly metrics: readonly UavInspectionMetricInput[];
+  readonly missingMetricCodes?: readonly string[];
+}
+
+/** Bản ghi kiểm định kỹ thuật UAV đã chuẩn hóa cho Chi tiết Drone và lịch sử (`DESC`). */
+export interface UavInspectionRecord {
+  readonly id: string;
+  readonly droneId: string;
+  readonly sourceType: UavInspectionSourceType | string;
+  readonly conclusion: UavInspectionConclusion | string;
+  readonly status: string;
+  readonly health: string;
+  readonly readiness: DroneReadinessStatus;
+  readonly technicianName?: string | null;
+  readonly notes?: string | null;
+  readonly completedAt?: string | null;
+  readonly validUntil?: string | null;
+  readonly metricCount: number;
+  readonly missingMetricCodes?: readonly string[];
+}
+
 /** Sức khỏe kỹ thuật (`TechnicalHealth`). */
 export type UavTechnicalHealth = 'Unknown' | 'Healthy' | 'Warning' | 'Critical' | string;
 
 export const UAV_TECHNICAL_HEALTHS: readonly { readonly value: UavTechnicalHealth; readonly label: string }[] = [
-  { value: 'Healthy', label: 'Đạt an toàn' },
-  { value: 'Warning', label: 'Cảnh báo' },
-  { value: 'Critical', label: 'Lỗi - không bay' },
-  { value: 'Unknown', label: 'Chưa kiểm tra' },
+  { value: 'Healthy', label: 'Đạt chuẩn / Sẵn sàng' },
+  { value: 'Warning', label: 'Không đạt / Cần bảo trì' },
+  { value: 'Critical', label: 'Không đạt / Cần bảo trì' },
+  { value: 'Unknown', label: 'Chưa kiểm định' },
 ];
 
 /** Mức phù hợp phạm vi bay (`GisDroneCapabilityItemDto.suitability`). */

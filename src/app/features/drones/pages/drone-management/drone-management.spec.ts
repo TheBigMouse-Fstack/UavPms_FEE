@@ -151,7 +151,7 @@ describe('DroneManagement Component', () => {
   });
 
   it('lets technicians edit and check drones but not delete or plan', () => {
-    authUser.set({ id: 'u2', role: 'MaintenanceTechnician' });
+    authUser.set({ id: 'u2', role: 'Technician' });
     harness.openHistory(mockDrones[0]);
     fixture.detectChanges();
     const titles = buttonTitles();

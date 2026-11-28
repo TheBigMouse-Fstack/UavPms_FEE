@@ -1,6 +1,6 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { forkJoin, map, Observable, of, switchMap, throwError } from 'rxjs';
+import { forkJoin, map, Observable, of, switchMap } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { unwrapApiData } from '../../../models/api.models';
 import { asRecord, readArray, readOptionalNumber } from '../../../shared/utils';
@@ -9,6 +9,7 @@ import {
   AssessmentCreateRequest,
   AssessmentFilterOptions,
   AssessmentPage,
+  AssessmentReEvaluateRequest,
   AssessmentTower,
   AssessmentTowerOption,
   DroneTechnicalInspectionResult,
@@ -17,12 +18,14 @@ import {
   ReadinessCheck,
   RegionOption,
   ResourceReadiness,
+  SelectablePreMissionDrone,
   SiteCheckItem,
   SubsystemHealth,
   TechnicalMetric,
   UavCandidate,
   UavTechnicalEligibility,
 } from '../../../models/pre-mission.models';
+import { resolveDroneReadiness } from '../../../models/drone-management.models';
 
 export interface RealtimeWeatherSnapshot {
   temperature: number;
@@ -122,6 +125,9 @@ export class PreMissionApi {
   }
 
   create(request: AssessmentCreateRequest): Observable<PreMissionAssessment> {
+    const inspectorCount = request.inspectorCount ?? request.requiredInspectors ?? 1;
+    const analystCount = request.analystCount ?? request.requiredAnalysts ?? 1;
+    const technicianCount = request.technicianCount ?? request.requiredTechnicians ?? 1;
     const payload = {
       regionId: request.regionId,
       plannedStart: toIsoString(request.plannedStart),
@@ -129,10 +135,11 @@ export class PreMissionApi {
       towerIds: request.towerIds,
       boundaryWkt: request.boundaryWkt || null,
       idempotencyKey: request.idempotencyKey || null,
-      requiredInspectors: request.requiredInspectors ?? 1,
-      requiredAnalysts: request.requiredAnalysts ?? 1,
-      requiredTechnicians: request.requiredTechnicians ?? 1,
-      maxDronesLimit: request.maxDronesLimit ?? 1,
+      inspectorCount,
+      analystCount,
+      technicianCount,
+      droneIds: request.droneIds ? [...request.droneIds] : [],
+      maxDronesLimit: request.maxDronesLimit ?? Math.max(1, request.droneIds?.length ?? 1),
     };
     return this.http.post<unknown>(this.url, payload).pipe(map((response) => normalizeAssessment(unwrapApiData(response))));
   }
@@ -145,12 +152,12 @@ export class PreMissionApi {
 
   /**
    * Chạy lại đánh giá (`POST /{id}/re-evaluate`) và trả về hồ sơ đầy đủ sau khi đánh giá (cùng DTO với `GET /{id}`).
-   * Đây là cách duy nhất để làm mới ứng viên: `GET /{id}/resource-readiness` chỉ đọc kết quả lần đánh giá gần nhất.
-   * Cần quyền quản lý vùng của hồ sơ (`403 REGION_MANAGEMENT_SCOPE_REQUIRED`).
+   * Hỗ trợ truyền tùy chọn `inspectorCount`, `analystCount`, `technicianCount`, `droneIds`.
    */
-  reEvaluate(id: string): Observable<PreMissionAssessment> {
+  reEvaluate(id: string, request?: AssessmentReEvaluateRequest): Observable<PreMissionAssessment> {
+    const body = request ? { ...request } : {};
     return this.http
-      .post<unknown>(`${this.url}/${id}/re-evaluate`, {})
+      .post<unknown>(`${this.url}/${id}/re-evaluate`, body)
       .pipe(map((response) => normalizeAssessment(unwrapApiData(response))));
   }
 
@@ -251,36 +258,35 @@ export class PreMissionApi {
     );
   }
 
-  // --- Kiểm định kỹ thuật drone ---
-
-  /**
-   * Nộp biên bản kiểm định (`POST /drone-technical-inspections`). Backend bắt buộc `metrics` có ít nhất 1 chỉ số
-   * (`400 METRICS_REQUIRED`) và tính mục critical thiếu số đo là KHÔNG ĐẠT, nên client phải gửi checklist thật.
-   * `droneId` trong body luôn là drone được kiểm định (`DRONE_ID_MISMATCH` nếu lệch).
-   */
-  runTechnicalInspection(droneId: string, options: TechnicalInspectionSubmission): Observable<DroneTechnicalInspectionResult> {
-    if (!options.metrics.length) {
-      return throwError(() => new Error('METRICS_REQUIRED: Biên bản kiểm định cần ít nhất một chỉ số đo kiểm.'));
-    }
-    const payload = {
-      droneId,
-      flightControllerUid: options.flightControllerUid || null,
-      preMissionAssessmentId: options.preMissionAssessmentId || null,
-      notes: options.notes || 'Kiểm định kỹ thuật trước nhiệm vụ',
-      policyVersion: options.policyVersion || 'v2.0',
-      metrics: options.metrics.map((m) => ({ ...m })),
-    };
-    return this.http
-      .post<unknown>(`${this.baseUrl}/drone-technical-inspections`, payload)
-      .pipe(
-        map((response) => normalizeInspectionResult(unwrapApiData(response), droneId)),
-      );
-  }
-
-  getLatestTechnicalInspection(droneId: string): Observable<DroneTechnicalInspectionResult> {
-    return this.http
-      .get<unknown>(`${this.baseUrl}/drone-technical-inspections/drone/${droneId}/latest`)
-      .pipe(map((response) => normalizeInspectionResult(unwrapApiData(response), droneId)));
+  /** Danh sách UAV theo khu vực để chọn khi tạo MF01 (chỉ cho chọn UAV `Ready`). */
+  getRegionDrones(regionId?: string): Observable<readonly SelectablePreMissionDrone[]> {
+    let params = new HttpParams().set('detailed', 'true');
+    if (regionId) params = params.set('regionId', regionId);
+    return this.http.get<unknown>(`${this.baseUrl}/drones`, { params }).pipe(
+      map((response) => {
+        const drones = itemsOf(unwrapApiData(response)).map((item) => {
+          const d = objectOf(item);
+          const technicalHealth = stringOf(d['technicalHealth'], 'Unknown');
+          const operationalStatus = stringOf(d['operationalStatus'], 'Unknown');
+          const readiness = resolveDroneReadiness({
+            readiness: optionalStringOf(d['readiness']),
+            technicalHealth,
+          });
+          return {
+            id: stringOf(d['id']),
+            regionId: stringOf(d['assignedRegionId'] ?? d['regionId']),
+            code: stringOf(d['code']),
+            name: stringOf(d['name']),
+            model: stringOf(d['model']),
+            readiness,
+            operationalStatus,
+            technicalHealth,
+          };
+        });
+        if (!regionId) return drones;
+        return drones.filter((drone) => drone.regionId === regionId);
+      }),
+    );
   }
 
   /** Khí tượng thời gian thực từ API Open-Meteo phân giải cao theo đúng tọa độ GPS của cột/khu vực được phân công. */
@@ -435,7 +441,12 @@ const normalizeDrone = (value: unknown): UavCandidate => {
   return {
     isAvailable,
     technicalEligibility: isCritical ? 'CRITICAL' : techElig,
+    readiness: resolveDroneReadiness({
+      readiness: optionalStringOf(d['readiness']),
+      technicalHealth: rawHealth,
+    }),
     id: droneId,
+    regionId: optionalStringOf(d['assignedRegionId'] ?? d['regionId']),
     candidateId: stringOf(d['id']),
     code: stringOf(d['uavCode']),
     model: stringOf(d['model']),
@@ -514,8 +525,13 @@ export function normalizeAssessmentStatus(value: unknown): string {
 
 export const normalizeAssessment = (value: unknown): PreMissionAssessment => {
   const x = objectOf(value);
-  const drones = arrayOf(x['droneCandidates']).length ? arrayOf(x['droneCandidates']) : arrayOf(x['uavCandidates']);
-  const uavCandidates = drones.map(normalizeDrone);
+  const regionId = stringOf(x['regionId']);
+  // Danh sách chính thức có thể rỗng sau khi backend loại drone ở lần đánh giá lại.
+  const drones = arrayOf(x['droneCandidates'] ?? x['uavCandidates']);
+  const uavCandidates = drones.map(normalizeDrone).filter((drone) => {
+    // DTO cũ chưa trả vùng của từng drone. Backend đã giới hạn danh sách theo vùng hồ sơ.
+    return drone.id && (!drone.regionId || drone.regionId === regionId);
+  });
   const eligibleDrones = uavCandidates.filter((d) => d.isEligible);
   let uavCheck = checkOf(x['uav']);
   let techCheck = checkOf(x['technical']);
@@ -546,11 +562,24 @@ export const normalizeAssessment = (value: unknown): PreMissionAssessment => {
     overallTech = 'Critical';
   }
 
+  const findingsRaw = stringOf(x['findings']);
+  let findingsObj: Record<string, unknown> = {};
+  if (findingsRaw.startsWith('{')) {
+    try {
+      findingsObj = objectOf(JSON.parse(findingsRaw));
+    } catch {
+      findingsObj = {};
+    }
+  }
+  const inspectorCount = optionalNumberOf(x['inspectorCount'] ?? findingsObj['inspectorCount']) ?? undefined;
+  const analystCount = optionalNumberOf(x['analystCount'] ?? findingsObj['analystCount']) ?? undefined;
+  const technicianCount = optionalNumberOf(x['technicianCount'] ?? findingsObj['technicianCount']) ?? undefined;
+
   return {
     id: stringOf(x['id']),
     assessmentCode: stringOf(x['assessmentCode']),
     managerId: stringOf(x['managerId']),
-    regionId: stringOf(x['regionId']),
+    regionId,
     regionName: stringOf(x['regionName']),
     plannedStart: stringOf(x['plannedStart']),
     plannedEnd: stringOf(x['plannedEnd']),
@@ -559,7 +588,10 @@ export const normalizeAssessment = (value: unknown): PreMissionAssessment => {
     siteFeasibilityStatus: stringOf(x['siteFeasibilityStatus'], 'Pending'),
     validUntil: optionalStringOf(x['validUntil']),
     version: Number(x['version'] ?? 0),
-    findings: stringOf(x['findings']),
+    findings: findingsRaw,
+    inspectorCount,
+    analystCount,
+    technicianCount,
     evaluationPolicyVersion: optionalStringOf(x['evaluationPolicyVersion']),
     completedMissionId: optionalStringOf(x['completedMissionId'] ?? x['consumedByMissionId']),
     towers: arrayOf(x['towers']).map(normalizeTower).sort((a, b) => a.sequence - b.sequence),
@@ -698,7 +730,13 @@ const normalizePage = (
       x['meta'] ??
       outer['meta'],
   );
-  const items = itemsOf(unwrapped).map(normalizeAssessment);
+  const items = itemsOf(unwrapped)
+    .map(normalizeAssessment)
+    .sort((a, b) => {
+      const timeA = Date.parse(a.createdAt || '') || 0;
+      const timeB = Date.parse(b.createdAt || '') || 0;
+      return timeB - timeA;
+    });
 
   const resolvedPageSize =
     positiveNumberOf(

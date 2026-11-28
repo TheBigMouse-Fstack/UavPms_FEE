@@ -9,7 +9,6 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { ToastService } from '../../../../core/toast/toast.service';
@@ -18,7 +17,9 @@ import { DroneManagementApi } from '../../data-access/drone-management-api';
 import {
   BasicTechnicalCheckRequest,
   CreateUavRequest,
+  droneReadinessLabel,
   DroneTechnicalInspectionSummaryDto,
+  resolveDroneReadiness,
   UAV_OPERATIONAL_STATUSES,
   UAV_TECHNICAL_HEALTHS,
   UavOperationalStatus,
@@ -33,10 +34,11 @@ import { isManagerRole, isTechnicianRole } from '../../../../core/auth/roles';
 import { statusLabel as sharedStatusLabel } from '../../../../shared/status/status';
 import { describeHttpError } from '../../../../shared/errors/business-error-messages';
 import { statusColorClass, statusLabel as globalStatusLabel } from '../../../../shared/status/status';
+import { canPerformDroneBist, formatVietnamDateTime, MultiRolePrincipal } from '../../../../shared/utils';
 
 @Component({
   selector: 'app-drone-management',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe, Pagination],
+  imports: [ReactiveFormsModule, RouterLink, Pagination],
   templateUrl: './drone-management.html',
   styleUrl: './drone-management.scss',
   encapsulation: ViewEncapsulation.None,
@@ -53,8 +55,12 @@ export class DroneManagement {
 
   /** `DELETE /drones/{id}` is for SystemAdmin/Manager. */
   protected readonly canManageFleet = computed(() => isManagerRole(this.auth.user()?.role));
-  /** `POST/PUT /drones` and `POST /drones/{id}/basic-technical-check`: managers and technicians. Others read only. */
+  /** `POST/PUT /drones`: managers and technicians. Others read only. */
   protected readonly canEditDrone = computed(() => this.canManageFleet() || isTechnicianRole(this.auth.user()?.role));
+  /** Chỉ Technician và SystemAdmin (multi-role union) được ghi BIST/FC. */
+  protected readonly canPerformBist = computed(() =>
+    canPerformDroneBist(this.auth.user() as MultiRolePrincipal | null),
+  );
 
   // Technical-inspection history (`GET /drones/{id}/technical-inspections`, every role)
   protected readonly historyDrone = signal<UavRecord | null>(null);
@@ -630,7 +636,11 @@ export class DroneManagement {
   }
 
   protected healthLabel(health: string): string {
-    return health ? sharedStatusLabel(health) : 'Chưa kiểm định';
+    return droneReadinessLabel(resolveDroneReadiness({ technicalHealth: health }));
+  }
+
+  protected formatDateTime(iso?: string | null, fallback = 'Chưa hoàn thành'): string {
+    return formatVietnamDateTime(iso, fallback);
   }
 
   protected statusBadgeClass(status: string): string {

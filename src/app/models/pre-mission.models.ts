@@ -62,6 +62,7 @@ export type UavSuitability = 'SUITABLE' | 'SUITABLE_WITH_SPLIT' | 'UNSUITABLE' |
 /** Ứng viên drone (`PreMissionAssessmentDroneDto`). `id` là `droneId`. */
 export interface UavCandidate {
   readonly id: string;
+  readonly regionId?: string | null;
   readonly candidateId: string;
   readonly code: string;
   readonly model: string;
@@ -91,6 +92,21 @@ export interface UavCandidate {
   readonly isAvailable?: boolean;
   /** Kết quả kỹ thuật BR-22 (`technicalEligibilityStatus` nếu có, ngược lại suy ra từ `reasonCode`). */
   readonly technicalEligibility?: UavTechnicalEligibility;
+  /** Trạng thái sẵn sàng kế thừa từ Chi tiết Drone (`Ready` | `MaintenanceRequired`). */
+  readonly readiness?: 'Ready' | 'MaintenanceRequired';
+}
+
+/** Drone hiển thị để chọn trên màn tạo Pre-Mission (chỉ cho chọn `Ready`). */
+export interface SelectablePreMissionDrone {
+  readonly id: string;
+  /** Vùng được gán của UAV; bắt buộc khớp hồ sơ MF01 theo BRL-01. */
+  readonly regionId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly model: string;
+  readonly readiness: 'Ready' | 'MaintenanceRequired';
+  readonly operationalStatus: string;
+  readonly technicalHealth: string;
 }
 
 /** `ELIGIBLE`: có biên bản còn hạn tại giờ bay; `REQUIRES_INSPECTION`: chưa có/đã hết hạn; `UNKNOWN`: không xác định. */
@@ -156,6 +172,9 @@ export interface PreMissionAssessment extends BaseAuditableEntity {
   readonly validUntil?: string | null;
   readonly version: number;
   readonly findings: string;
+  readonly inspectorCount?: number;
+  readonly analystCount?: number;
+  readonly technicianCount?: number;
   readonly evaluationPolicyVersion?: string | null;
   /** Nhiệm vụ đã tạo từ hồ sơ (`consumedByMissionId` / `completedMissionId`). */
   readonly completedMissionId?: string | null;
@@ -202,7 +221,7 @@ export interface AssessmentFilterOptions {
   search?: string;
 }
 
-/** Body của `POST /pre-mission-assessments` (`CreateAssessmentRequest`). */
+/** Body của `POST /pre-mission-assessments` (`BE-REQ-101`). */
 export interface AssessmentCreateRequest {
   readonly regionId: string;
   readonly plannedStart: string;
@@ -210,10 +229,22 @@ export interface AssessmentCreateRequest {
   readonly towerIds: readonly string[];
   readonly boundaryWkt?: string | null;
   readonly idempotencyKey?: string | null;
+  readonly inspectorCount?: number;
+  readonly analystCount?: number;
+  readonly technicianCount?: number;
+  readonly droneIds?: readonly string[];
   readonly requiredInspectors?: number;
   readonly requiredAnalysts?: number;
   readonly requiredTechnicians?: number;
   readonly maxDronesLimit?: number;
+}
+
+/** Body tùy chọn cho `POST /pre-mission-assessments/{id}/re-evaluate` (`BE-REQ-101`). */
+export interface AssessmentReEvaluateRequest {
+  readonly inspectorCount?: number;
+  readonly analystCount?: number;
+  readonly technicianCount?: number;
+  readonly droneIds?: readonly string[];
 }
 
 /** Khu vực chọn khi lập hồ sơ (`RegionDto`). */

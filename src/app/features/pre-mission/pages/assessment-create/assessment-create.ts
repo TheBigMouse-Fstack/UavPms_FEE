@@ -14,8 +14,9 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Map as MapLibreMap, Marker } from 'maplibre-gl';
-import { finalize } from 'rxjs';
-import { AssessmentTowerOption, RegionOption } from '../../../../models/pre-mission.models';
+import { finalize, Subscription } from 'rxjs';
+import { AssessmentTowerOption, RegionOption, SelectablePreMissionDrone } from '../../../../models/pre-mission.models';
+import { droneReadinessLabel } from '../../../../models/drone-management.models';
 import { MissionTargetSelection } from '../../../missions/data-access/mission-target-selection';
 import { isValidGuid, PreMissionApi } from '../../data-access/pre-mission-api';
 import { describeHttpError } from '../../../../shared/errors/business-error-messages';
@@ -69,6 +70,7 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private regionDronesRequest?: Subscription;
 
   private readonly mapContainer = viewChild<ElementRef<HTMLDivElement>>('createMapContainer');
   private map: MapLibreMap | null = null;
@@ -83,11 +85,14 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
 
   protected readonly busy = signal(false);
   protected readonly loadingTowers = signal(false);
+  protected readonly loadingDrones = signal(false);
   protected readonly error = signal('');
 
   protected readonly regions = signal<readonly RegionOption[]>([]);
   protected readonly towers = signal<readonly AssessmentTowerOption[]>([]);
   protected readonly selectedTowerIds = signal<readonly string[]>([]);
+  protected readonly regionDrones = signal<readonly SelectablePreMissionDrone[]>([]);
+  protected readonly selectedDroneIds = signal<readonly string[]>([]);
   protected readonly towerSearch = signal('');
 
   /**
@@ -101,9 +106,9 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
       regionId: ['', [Validators.required]],
       plannedStart: [formatDatetimeLocal(new Date(Date.now() + 60 * 60 * 1000)), [Validators.required]],
       plannedEnd: [formatDatetimeLocal(new Date(Date.now() + 4 * 60 * 60 * 1000)), [Validators.required]],
-      requiredInspectors: [1, [Validators.required, Validators.min(1), Validators.max(10)]],
-      requiredAnalysts: [1, [Validators.required, Validators.min(1), Validators.max(10)]],
-      requiredTechnicians: [1, [Validators.required, Validators.min(1), Validators.max(10)]],
+      inspectorCount: [1, [Validators.required, Validators.min(1), Validators.max(10)]],
+      analystCount: [1, [Validators.required, Validators.min(1), Validators.max(10)]],
+      technicianCount: [1, [Validators.required, Validators.min(1), Validators.max(10)]],
       maxDronesLimit: [1, [Validators.required, Validators.min(1), Validators.max(5)]],
     },
     { validators: [dateWindowValidator, notInPastValidator] },
@@ -111,9 +116,9 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
 
   private readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
 
-  protected readonly cleanInspectors = computed(() => Math.max(1, Number(this.formValue().requiredInspectors) || 1));
-  protected readonly cleanAnalysts = computed(() => Math.max(1, Number(this.formValue().requiredAnalysts) || 1));
-  protected readonly cleanTechnicians = computed(() => Math.max(1, Number(this.formValue().requiredTechnicians) || 1));
+  protected readonly cleanInspectors = computed(() => Math.max(1, Number(this.formValue().inspectorCount) || 1));
+  protected readonly cleanAnalysts = computed(() => Math.max(1, Number(this.formValue().analystCount) || 1));
+  protected readonly cleanTechnicians = computed(() => Math.max(1, Number(this.formValue().technicianCount) || 1));
   protected readonly cleanMaxDrones = computed(() => Math.max(1, Number(this.formValue().maxDronesLimit) || 1));
 
   protected readonly totalRequiredPersonnel = computed(() => {
@@ -160,6 +165,7 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
       if (gisRegionId) {
         this.form.controls.regionId.setValue(gisRegionId);
         this.loadTowers(gisRegionId);
+        this.loadRegionDrones(gisRegionId);
       }
     }
   }
@@ -177,7 +183,25 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
     this.form.controls.regionId.setValue(regionId);
     this.form.controls.regionId.markAsTouched();
     this.selectedTowerIds.set([]);
+    this.selectedDroneIds.set([]);
     this.loadTowers(regionId);
+    this.loadRegionDrones(regionId);
+  }
+
+  protected isDroneSelected(id: string): boolean {
+    return this.selectedDroneIds().includes(id);
+  }
+
+  protected toggleDrone(drone: SelectablePreMissionDrone): void {
+    // Chỉ cho chọn UAV ở trạng thái Đạt chuẩn / Sẵn sàng (FR-003).
+    if (drone.readiness !== 'Ready' || drone.regionId !== this.form.controls.regionId.value) return;
+    this.selectedDroneIds.update((ids) =>
+      ids.includes(drone.id) ? ids.filter((x) => x !== drone.id) : [...ids, drone.id],
+    );
+  }
+
+  protected droneReadinessText(drone: SelectablePreMissionDrone): string {
+    return droneReadinessLabel(drone.readiness);
   }
 
   protected onTowerSearch(event: Event): void {
@@ -269,7 +293,7 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
   }
 
   protected onQuotaInput(
-    name: 'requiredInspectors' | 'requiredAnalysts' | 'requiredTechnicians' | 'maxDronesLimit',
+    name: 'inspectorCount' | 'analystCount' | 'technicianCount' | 'maxDronesLimit',
     min = 1,
     max = 10,
   ): void {
@@ -287,7 +311,7 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
     control.markAsDirty();
   }
 
-  protected incrementQuota(name: 'requiredInspectors' | 'requiredAnalysts' | 'requiredTechnicians' | 'maxDronesLimit', max = 10): void {
+  protected incrementQuota(name: 'inspectorCount' | 'analystCount' | 'technicianCount' | 'maxDronesLimit', max = 10): void {
     const control = this.form.get(name);
     if (!control) return;
     const current = Number(control.value) || 1;
@@ -297,7 +321,7 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
     }
   }
 
-  protected decrementQuota(name: 'requiredInspectors' | 'requiredAnalysts' | 'requiredTechnicians' | 'maxDronesLimit', min = 1): void {
+  protected decrementQuota(name: 'inspectorCount' | 'analystCount' | 'technicianCount' | 'maxDronesLimit', min = 1): void {
     const control = this.form.get(name);
     if (!control) return;
     const current = Number(control.value) || 1;
@@ -326,9 +350,10 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
       plannedStart: raw.plannedStart,
       plannedEnd: raw.plannedEnd,
       towerIds,
-      requiredInspectors: raw.requiredInspectors,
-      requiredAnalysts: raw.requiredAnalysts,
-      requiredTechnicians: raw.requiredTechnicians,
+      inspectorCount: raw.inspectorCount,
+      analystCount: raw.analystCount,
+      technicianCount: raw.technicianCount,
+      droneIds: [...this.selectedDroneIds()],
       maxDronesLimit: raw.maxDronesLimit,
     };
     this.busy.set(true);
@@ -413,6 +438,26 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
       });
   }
 
+  private loadRegionDrones(regionId: string): void {
+    this.regionDronesRequest?.unsubscribe();
+    this.regionDrones.set([]);
+    if (!regionId || typeof this.api.getRegionDrones !== 'function') return;
+    this.loadingDrones.set(true);
+    this.regionDronesRequest = this.api
+      .getRegionDrones(regionId)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.loadingDrones.set(false)),
+      )
+      .subscribe({
+        next: (list) => {
+          const matchingRegion = list.filter((drone) => drone.regionId === regionId);
+          this.regionDrones.set(matchingRegion);
+        },
+        error: () => this.regionDrones.set([]),
+      });
+  }
+
   /** Tạo lại hồ sơ từ một hồ sơ cũ (ví dụ hồ sơ đã hết hạn): kế thừa khu vực và danh sách cột. */
   private prefillFromAssessment(id: string): void {
     this.api
@@ -421,29 +466,20 @@ export class AssessmentCreate implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (a) => {
           this.form.controls.regionId.setValue(a.regionId);
-          if (a.findings) {
-            try {
-              const findingsObj = typeof a.findings === 'string' ? JSON.parse(a.findings) : a.findings;
-              if (typeof findingsObj?.requiredInspectors === 'number') {
-                this.form.controls.requiredInspectors.setValue(findingsObj.requiredInspectors);
-              }
-              if (typeof findingsObj?.requiredAnalysts === 'number') {
-                this.form.controls.requiredAnalysts.setValue(findingsObj.requiredAnalysts);
-              }
-              if (typeof findingsObj?.requiredTechnicians === 'number') {
-                this.form.controls.requiredTechnicians.setValue(findingsObj.requiredTechnicians);
-              }
-              if (typeof findingsObj?.maxDronesLimit === 'number') {
-                this.form.controls.maxDronesLimit.setValue(findingsObj.maxDronesLimit);
-              }
-            } catch {
-              // Giữ định mức mặc định nếu findings nguồn không phải JSON hợp lệ
-            }
+          if (typeof a.inspectorCount === 'number' && a.inspectorCount >= 1) {
+            this.form.controls.inspectorCount.setValue(a.inspectorCount);
+          }
+          if (typeof a.analystCount === 'number' && a.analystCount >= 1) {
+            this.form.controls.analystCount.setValue(a.analystCount);
+          }
+          if (typeof a.technicianCount === 'number' && a.technicianCount >= 1) {
+            this.form.controls.technicianCount.setValue(a.technicianCount);
           }
           this.loadTowers(
             a.regionId,
             a.towers.map((t) => t.towerId),
           );
+          this.loadRegionDrones(a.regionId);
         },
         error: () => this.error.set('Không thể tải hồ sơ đánh giá nguồn để sao chép phạm vi.'),
       });

@@ -18,6 +18,10 @@ export const BUSINESS_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   MISSION_ACCESS_DENIED: 'Bạn không có quyền truy cập nhiệm vụ này.',
   DRONE_ACCESS_DENIED: 'Bạn không có quyền thao tác trên UAV này.',
   TECHNICIAN_OR_MANAGER_ROLE_REQUIRED: 'Chỉ Kỹ thuật viên hoặc Quản lý mới được lập biên bản kiểm định UAV.',
+  TECHNICIAN_OR_ADMIN_ROLE_REQUIRED: 'Chỉ Kỹ thuật viên hoặc Quản trị hệ thống mới được thao tác kiểm định BIST/FC.',
+  INVALID_ROLE_HEADCOUNT: 'Số lượng nhân sự cho từng vai trò (Phi công, Chuyên viên phân tích, Kỹ thuật viên) phải từ 1 trở lên.',
+  DRONE_NOT_READY: 'UAV được chọn chưa Đạt chuẩn / Sẵn sàng. Vui lòng để Kỹ thuật viên kiểm định tại màn Chi tiết Drone.',
+  DRONE_REGION_MISMATCH: 'UAV được chọn không thuộc khu vực của hồ sơ đánh giá tiền nhiệm vụ.',
   ACTIVE_USER_REQUIRED: 'Tài khoản của bạn đang bị khóa hoặc chưa kích hoạt, không thể thực hiện thao tác.',
   AUTHENTICATION_REQUIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
   TOWER_OUTSIDE_MANAGEMENT_SCOPE: 'Có cột điện nằm ngoài khu vực bạn được quản lý.',
@@ -51,6 +55,7 @@ export const BUSINESS_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   DUPLICATE_METRIC: 'Biên bản kiểm định có chỉ số bị trùng lặp.',
   DRONE_ID_MISMATCH: 'Mã UAV trong biên bản không khớp với UAV đang kiểm định.',
   FC_NOT_REGISTERED: 'Flight Controller chưa được ghép nối với UAV nào. Vui lòng ghép nối trước khi kiểm định.',
+  FC_ALREADY_PAIRED: 'Flight Controller đang gắn với UAV khác. Hãy ngắt kết nối ở UAV cũ trước khi ghép lại.',
   FC_DRONE_MISMATCH: 'Flight Controller đang kết nối thuộc về UAV khác với UAV cần kiểm định.',
   FC_UID_REQUIRED: 'Thiếu mã định danh (UID) của Flight Controller.',
   NO_VALID_TECHNICAL_INSPECTION:
